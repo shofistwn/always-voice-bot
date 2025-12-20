@@ -1,0 +1,14 @@
+services:
+  always-voice:
+    build: .
+    container_name: always-voice-bot
+    restart: unless-stopped
+    environment:
+      - TOKEN=${TOKEN}
+      - GUILD_ID=${GUILD_ID}
+      - CHANNEL_ID=${CHANNEL_ID}
+      - STATUS=${STATUS:-dnd}
+      - SELF_MUTE=${SELF_MUTE:-True}
+      - SELF_DEAF=${SELF_DEAF:-False}
+    volumes:
+      - ./logs:/app/logs
