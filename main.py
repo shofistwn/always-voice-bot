@@ -13,6 +13,9 @@ GUILD_ID = os.getenv("GUILD_ID", "ADD_YOUR_SERVER_ID_HERE")
 CHANNEL_ID = os.getenv("CHANNEL_ID", "ADD_YOUR_CHANNEL_ID_HERE")
 SELF_MUTE = os.getenv("SELF_MUTE", "True").lower() == "true"
 SELF_DEAF = os.getenv("SELF_DEAF", "False").lower() == "true"
+AUTO_REPLY = os.getenv("AUTO_REPLY", "True").lower() == "true"
+REPLY_TRIGGER = os.getenv("REPLY_TRIGGER", "hey wake up!").lower()
+REPLY_MESSAGE = os.getenv("REPLY_MESSAGE", "yes")
 
 # Logging utility
 def log(level, message):
@@ -94,6 +97,23 @@ def join_voice_channel():
         log("ERROR", f"Failed to send voice state update: {str(e)}")
         return False
 
+def send_message(channel_id, content):
+    """Send a message to a Discord channel"""
+    try:
+        url = f"https://discord.com/api/v9/channels/{channel_id}/messages"
+        payload = {"content": content}
+        response = requests.post(url, headers=headers, json=payload)
+        
+        if response.status_code == 200 or response.status_code == 201:
+            log("SUCCESS", f"Replied: '{content}'")
+            return True
+        else:
+            log("ERROR", f"Failed to send message: {response.status_code}")
+            return False
+    except Exception as e:
+        log("ERROR", f"Error sending message: {str(e)}")
+        return False
+
 def receive_messages():
     """Receive and handle messages from Discord"""
     global ws, is_in_voice, last_voice_state
@@ -144,6 +164,27 @@ def receive_messages():
                             
                         elif t == 'VOICE_SERVER_UPDATE':
                             log("DEBUG", "Voice server info received")
+                        
+                        elif t == 'MESSAGE_CREATE':
+                            # Handle incoming messages
+                            if AUTO_REPLY:
+                                content = d.get('content', '').lower()
+                                mentions = d.get('mentions', [])
+                                author_id = d.get('author', {}).get('id')
+                                channel_id = d.get('channel_id')
+                                message_id = d.get('id')
+                                
+                                # Check if we are mentioned and not the author
+                                is_mentioned = any(mention.get('id') == userid for mention in mentions)
+                                
+                                if is_mentioned and author_id != userid:
+                                    # Check if message contains trigger phrase
+                                    if REPLY_TRIGGER in content:
+                                        log("INFO", f"Mention detected with trigger: '{REPLY_TRIGGER}'")
+                                        log("INFO", f"Replying with: '{REPLY_MESSAGE}'")
+                                        
+                                        # Send reply
+                                        send_message(channel_id, REPLY_MESSAGE)
                             
         except Exception as e:
             if should_run:
@@ -176,7 +217,8 @@ def connect_and_join():
                 "presence": {
                     "status": status,
                     "afk": False
-                }
+                },
+                "intents": 513  # GUILDS (1) + GUILD_MESSAGES (512)
             }
         }
         
@@ -222,6 +264,10 @@ def run_joiner():
     print(f"  • Channel ID: {CHANNEL_ID}")
     print(f"  • Self Mute : {SELF_MUTE}")
     print(f"  • Self Deaf : {SELF_DEAF}")
+    print(f"  • Auto Reply: {AUTO_REPLY}")
+    if AUTO_REPLY:
+        print(f"  • Trigger   : '{REPLY_TRIGGER}'")
+        print(f"  • Reply Msg : '{REPLY_MESSAGE}'")
     print("\n" + "-"*60 + "\n")
     
     try:
@@ -234,6 +280,8 @@ def run_joiner():
         
         log("SUCCESS", "Bot is now running and staying connected!")
         log("INFO", "Auto-rejoin enabled - will rejoin if disconnected")
+        if AUTO_REPLY:
+            log("INFO", f"Auto-reply enabled - watching for '{REPLY_TRIGGER}'")
         log("INFO", "Monitoring connection... (Press Ctrl+C to stop)")
         
         # Keep main thread alive and monitor connection
