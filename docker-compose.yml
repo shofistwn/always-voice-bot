@@ -4,11 +4,14 @@ services:
     container_name: always-voice-bot
     restart: unless-stopped
     environment:
-      - TOKEN=${TOKEN}
-      - GUILD_ID=${GUILD_ID}
-      - CHANNEL_ID=${CHANNEL_ID}
+      - TOKEN=${TOKEN:-}
+      - GUILD_ID=${GUILD_ID:-}
+      - CHANNEL_ID=${CHANNEL_ID:-}
       - STATUS=${STATUS:-dnd}
       - SELF_MUTE=${SELF_MUTE:-True}
       - SELF_DEAF=${SELF_DEAF:-False}
+      - AUTO_REPLY=${AUTO_REPLY:-True}
+      - REPLY_TRIGGER=${REPLY_TRIGGER:-hey wake up!}
+      - REPLY_MESSAGE=${REPLY_MESSAGE:-yes}
     volumes:
       - ./logs:/app/logs
