@@ -19,7 +19,7 @@ AUTO_REPLY = os.getenv("AUTO_REPLY", "True").lower() == "true"
 REPLY_TRIGGER = os.getenv("REPLY_TRIGGER", "hey wake up!").lower()
 REPLY_MESSAGE = os.getenv("REPLY_MESSAGE", "yes")
 
-class DiscordVoiceBot:
+class AlwaysVoiceBot:
     """
     A Discord bot class that maintains a persistent voice channel presence 
     and supports session resuming to prevent being kicked during disconnects.
@@ -111,7 +111,13 @@ class DiscordVoiceBot:
 
                 elif t == 'VOICE_STATE_UPDATE':
                     if str(d.get('user_id')) == self.user_id:
+                        was_in_voice = self.is_in_voice
                         self.is_in_voice = d.get('channel_id') is not None
+
+                        if was_in_voice and not self.is_in_voice:
+                            self.log("WARN", "Disconnected from voice. Rejoining in 3 seconds...")
+                            time.sleep(3)
+                            self.join_voice()
 
                 elif t == 'MESSAGE_CREATE' and AUTO_REPLY:
                     if str(d.get('author', {}).get('id')) != self.user_id:
@@ -200,7 +206,7 @@ class DiscordVoiceBot:
             time.sleep(5)
 
 if __name__ == "__main__":
-    bot = DiscordVoiceBot()
+    bot = AlwaysVoiceBot()
     try:
         bot.start()
     except KeyboardInterrupt:
