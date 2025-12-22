@@ -27,7 +27,11 @@ class DiscordVoiceBot:
         self.is_in_voice = False
         self.user_id = None
         self.username = "Unknown"
-        self.headers = {"Authorization": TOKEN, "Content-Type": "application/json"}
+        self.headers = {
+            "Authorization": TOKEN,
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        }
 
     def log(self, level, message):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -115,6 +119,8 @@ class DiscordVoiceBot:
             self.log("INFO", "Connecting to Discord Gateway...")
             self.ws = create_connection('wss://gateway.discord.gg/?v=9&encoding=json')
             
+            self.heartbeat_count = 0
+            
             hello = json.loads(self.ws.recv())
             self.heartbeat_interval = hello['d']['heartbeat_interval']
             
@@ -123,9 +129,17 @@ class DiscordVoiceBot:
                 "op": 2,
                 "d": {
                     "token": TOKEN,
-                    "properties": {"$os": "linux", "$browser": "chrome", "$device": "pc"},
-                    "presence": {"status": STATUS, "afk": False},
-                    "intents": 641 # GUILDS, GUILD_VOICE_STATES, GUILD_MESSAGES
+                    "properties": {
+                        "$os": "Windows",
+                        "$browser": "Chrome",
+                        "$device": "PC"
+                    },
+                    "presence": {
+                        "status": STATUS, 
+                        "afk": False,
+                        "activities": []
+                    },
+                    "intents": 641 
                 }
             }))
             
