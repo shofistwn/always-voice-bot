@@ -111,7 +111,13 @@ class DiscordVoiceBot:
 
                 elif t == 'VOICE_STATE_UPDATE':
                     if str(d.get('user_id')) == self.user_id:
+                        was_in_voice = self.is_in_voice
                         self.is_in_voice = d.get('channel_id') is not None
+
+                        if was_in_voice and not self.is_in_voice:
+                            self.log("WARN", "Disconnected from voice. Rejoining in 3 seconds...")
+                            time.sleep(3)
+                            self.join_voice()
 
                 elif t == 'MESSAGE_CREATE' and AUTO_REPLY:
                     if str(d.get('author', {}).get('id')) != self.user_id:
