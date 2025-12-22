@@ -35,6 +35,7 @@ class DiscordVoiceBot:
 
     def log(self, level, message):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
         colors = {
             "INFO": "\033[92m", "WARN": "\033[93m", 
             "ERROR": "\033[91m", "SUCCESS": "\033[96m", "RETRY": "\033[94m"
