@@ -12,5 +12,6 @@ services:
       - SELF_MUTE=${SELF_MUTE:-True}
       - SELF_DEAF=${SELF_DEAF:-False}
       - AUTO_REPLY=${AUTO_REPLY:-True}
+      - REPLY_DELAY=${REPLY_DELAY:-5}
       - REPLY_TRIGGER=${REPLY_TRIGGER:-hey wake up!}
       - REPLY_MESSAGE=${REPLY_MESSAGE:-yes}

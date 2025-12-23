@@ -18,6 +18,7 @@ SELF_DEAF = os.getenv("SELF_DEAF", "False").lower() == "true"
 AUTO_REPLY = os.getenv("AUTO_REPLY", "True").lower() == "true"
 REPLY_TRIGGER = os.getenv("REPLY_TRIGGER", "hey wake up!").lower()
 REPLY_MESSAGE = os.getenv("REPLY_MESSAGE", "yes")
+REPLY_DELAY = int(os.getenv("REPLY_DELAY", "5"))
 
 class AlwaysVoiceBot:
     """
@@ -133,7 +134,7 @@ class AlwaysVoiceBot:
     def send_reply(self, channel_id):
         """Sends a text message reply to a specific channel."""
         def callback():
-            time.sleep(10)
+            time.sleep(REPLY_DELAY)
             try:
                 requests.post(
                     f"https://discord.com/api/v9/channels/{channel_id}/messages",
