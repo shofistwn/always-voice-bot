@@ -5,7 +5,8 @@ import time
 import requests
 from websocket import create_connection
 from datetime import datetime
-from threading import Thread
+
+from threading import Thread, Timer
 
 # --- Configuration ---
 # Environment variables for bot behavior and authentication
@@ -19,6 +20,8 @@ AUTO_REPLY = os.getenv("AUTO_REPLY", "True").lower() == "true"
 REPLY_TRIGGER = os.getenv("REPLY_TRIGGER", "hey wake up!").lower()
 REPLY_MESSAGE = os.getenv("REPLY_MESSAGE", "yes")
 REPLY_DELAY = int(os.getenv("REPLY_DELAY", "5"))
+VOICE_LIMIT = int(os.getenv("VOICE_LIMIT", "0"))
+VOICE_LIMIT_DELAY = int(os.getenv("VOICE_LIMIT_DELAY", "300"))
 
 class AlwaysVoiceBot:
     """
@@ -40,6 +43,8 @@ class AlwaysVoiceBot:
             "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         }
+        self.voice_users = set()
+        self.leave_timer = None
 
     def log(self, level, message):
         """Standardized console logging with timestamps and colors."""
@@ -82,6 +87,64 @@ class AlwaysVoiceBot:
             except Exception as e:
                 self.log("ERROR", f"Voice join failed: {e}")
 
+    def leave_voice(self):
+        """Sends the OP 4 payload to leave the voice channel."""
+        if self.is_in_voice:
+            try:
+                self.ws.send(json.dumps({
+                    "op": 4,
+                    "d": {
+                        "guild_id": GUILD_ID,
+                        "channel_id": None,
+                        "self_mute": False,
+                        "self_deaf": False
+                    }
+                }))
+                self.log("INFO", "Leaving Voice Channel due to limit.")
+            except Exception as e:
+                self.log("ERROR", f"Voice leave failed: {e}")
+
+    def check_voice_limit(self):
+        """Checks if the bot should join or leave based on user count."""
+        if VOICE_LIMIT == 0:
+            return
+
+
+        # Count all users including the bot
+        current_count = len(self.voice_users)
+        
+        self.log("INFO", f"Voice check: {current_count} users (Limit: {VOICE_LIMIT})")
+
+        if current_count < VOICE_LIMIT:
+            # Cancel any pending leave timer
+            if self.leave_timer:
+                self.leave_timer.cancel()
+                self.leave_timer = None
+                self.log("INFO", "Voice limit relaxed, cancelling leave timer.")
+            
+            if not self.is_in_voice:
+                self.join_voice()
+        
+        elif current_count > VOICE_LIMIT:
+            if self.is_in_voice:
+                if not self.leave_timer:
+                    self.log("WARN", f"Over limit ({current_count} > {VOICE_LIMIT}). Scheduling leave in {VOICE_LIMIT_DELAY} seconds...")
+                    self.leave_timer = Timer(VOICE_LIMIT_DELAY, self.delayed_leave)
+                    self.leave_timer.daemon = True # distinct from Thread daemon arg
+                    self.leave_timer.start()
+
+    def delayed_leave(self):
+        """Action for the timer: re-check limit and potentially leave."""
+        self.leave_timer = None # Reset timer handle
+        
+        # Re-check count (including bot)
+        current_count = len(self.voice_users)
+        if current_count > VOICE_LIMIT:
+            self.leave_voice()
+        else:
+            self.log("INFO", "Voice count dropped back to safe levels. Staying.")
+
+
     def handle_messages(self):
         """Listens for Gateway events and manages session states."""
         while self.is_running and self.ws:
@@ -110,15 +173,42 @@ class AlwaysVoiceBot:
                 elif t == 'RESUMED':
                     self.log("SUCCESS", "Gateway session resumed successfully.")
 
+                elif t == 'GUILD_CREATE':
+                    # Verify this is the relevant guild
+                    if d.get('id') != GUILD_ID:
+                        continue
+                        
+                    # Initialize voice user list
+                    # d['voice_states'] contains list of partial voice states
+                    self.voice_users = set()
+                    for vs in d.get('voice_states', []):
+                        if vs.get('channel_id') == CHANNEL_ID:
+                            self.voice_users.add(str(vs.get('user_id')))
+                    self.check_voice_limit()
+
                 elif t == 'VOICE_STATE_UPDATE':
                     if str(d.get('user_id')) == self.user_id:
                         was_in_voice = self.is_in_voice
                         self.is_in_voice = d.get('channel_id') is not None
 
                         if was_in_voice and not self.is_in_voice:
-                            self.log("WARN", "Disconnected from voice. Rejoining in 3 seconds...")
-                            time.sleep(3)
-                            self.join_voice()
+                            # Only attempt immediate rejoin if no limit is set.
+                            # If limit IS set, check_voice_limit() will handle rejoining if appropriate.
+                            if VOICE_LIMIT == 0:
+                                self.log("WARN", "Disconnected from voice. Rejoining in 3 seconds...")
+                                time.sleep(3)
+                                self.join_voice()
+
+                    # Track other users
+                    if d.get('channel_id') == CHANNEL_ID:
+                        self.voice_users.add(str(d.get('user_id')))
+                    else:
+                        # User left or moved to another channel
+                        user_id_str = str(d.get('user_id'))
+                        if user_id_str in self.voice_users:
+                            self.voice_users.remove(user_id_str)
+                    
+                    self.check_voice_limit()
 
                 elif t == 'MESSAGE_CREATE' and AUTO_REPLY:
                     if str(d.get('author', {}).get('id')) != self.user_id:
@@ -200,9 +290,15 @@ class AlwaysVoiceBot:
 
         while self.is_running:
             if self.connect():
-                # Pause briefly to ensure connection is stable before joining voice
+                # Pause briefly to ensure connection is stable
                 time.sleep(2)
-                self.join_voice()
+                
+                # Only unconditional join if limit is disabled (Standard Mode).
+                # If limit is set, we wait for GUILD_CREATE events to populate users
+                # and then check_voice_limit() will decide if we should join.
+                if VOICE_LIMIT == 0:
+                     self.join_voice()
+
                 # handle_messages runs on the main thread to catch disconnects
                 self.handle_messages() 
             

@@ -8,6 +8,8 @@ services:
       - TOKEN=${TOKEN:-}
       - GUILD_ID=${GUILD_ID:-}
       - CHANNEL_ID=${CHANNEL_ID:-}
+      - VOICE_LIMIT=${VOICE_LIMIT:-0}
+      - VOICE_LIMIT_DELAY=${VOICE_LIMIT_DELAY:-300}
       - STATUS=${STATUS:-dnd}
       - SELF_MUTE=${SELF_MUTE:-True}
       - SELF_DEAF=${SELF_DEAF:-False}
