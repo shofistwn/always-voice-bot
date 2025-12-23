@@ -132,16 +132,20 @@ class AlwaysVoiceBot:
 
     def send_reply(self, channel_id):
         """Sends a text message reply to a specific channel."""
-        try:
-            requests.post(
-                f"https://discord.com/api/v9/channels/{channel_id}/messages",
-                headers=self.headers,
-                json={"content": REPLY_MESSAGE},
-                timeout=5
-            )
-            self.log("SUCCESS", f"Sent auto-reply to channel {channel_id}")
-        except:
-            self.log("ERROR", "HTTP request for auto-reply failed.")
+        def callback():
+            time.sleep(10)
+            try:
+                requests.post(
+                    f"https://discord.com/api/v9/channels/{channel_id}/messages",
+                    headers=self.headers,
+                    json={"content": REPLY_MESSAGE},
+                    timeout=5
+                )
+                self.log("SUCCESS", f"Sent auto-reply to channel {channel_id}")
+            except:
+                self.log("ERROR", "HTTP request for auto-reply failed.")
+        
+        Thread(target=callback, daemon=True).start()
 
     def connect(self):
         """Establishes or re-establishes a connection to the Discord Gateway."""
