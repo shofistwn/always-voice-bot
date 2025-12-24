@@ -113,8 +113,6 @@ class AlwaysVoiceBot:
         # Count all users including the bot
         current_count = len(self.voice_users)
         
-        self.log("INFO", f"Voice check: {current_count} users (Limit: {VOICE_LIMIT})")
-
         if current_count < VOICE_LIMIT:
             # Cancel any pending leave timer
             if self.leave_timer:
