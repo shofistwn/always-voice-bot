@@ -187,7 +187,10 @@ class AlwaysVoiceBot:
                     self.check_voice_limit()
 
                 elif t == 'VOICE_STATE_UPDATE':
-                    if str(d.get('user_id')) == self.user_id:
+                    user_id = str(d.get('user_id'))
+                    is_bot = user_id == self.user_id
+
+                    if is_bot:
                         was_in_voice = self.is_in_voice
                         self.is_in_voice = d.get('channel_id') is not None
 
@@ -199,16 +202,19 @@ class AlwaysVoiceBot:
                                 time.sleep(3)
                                 self.join_voice()
 
-                    # Track other users
+                    # Track other users and determine if update is relevant
+                    relevant_update = False
                     if d.get('channel_id') == CHANNEL_ID:
-                        self.voice_users.add(str(d.get('user_id')))
+                        self.voice_users.add(user_id)
+                        relevant_update = True
                     else:
                         # User left or moved to another channel
-                        user_id_str = str(d.get('user_id'))
-                        if user_id_str in self.voice_users:
-                            self.voice_users.remove(user_id_str)
+                        if user_id in self.voice_users:
+                            self.voice_users.remove(user_id)
+                            relevant_update = True
                     
-                    self.check_voice_limit()
+                    if relevant_update or is_bot:
+                        self.check_voice_limit()
 
                 elif t == 'MESSAGE_CREATE' and AUTO_REPLY:
                     if str(d.get('author', {}).get('id')) != self.user_id:
