@@ -33,13 +33,14 @@ class AlwaysVoiceBot:
         self.username = "Unknown"
         self.session_id = None
         self.last_sequence = None
+        self.resume_gateway_url = None  # New in API v10
         self.headers = {
             "Authorization": TOKEN,
             "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         }
         self.voice_users = set()
-        self.last_join_attempt = 0 # Tracks cooldown for voice connection attempts
+        self.last_join_attempt = 0  # Tracks cooldown for voice connection attempts
 
     def log(self, level, message):
         """Standardized console logging with ANSI color support."""
@@ -110,7 +111,7 @@ class AlwaysVoiceBot:
                 
             except Exception as e:
                 self.log("ERROR", f"Voice leave failed: {e}")
-                self.is_in_voice = True # Revert status on failure
+                self.is_in_voice = True  # Revert status on failure
 
     def check_voice_limit(self):
         """Monitors user count and manages bot presence based on VOICE_LIMIT settings."""
@@ -147,15 +148,21 @@ class AlwaysVoiceBot:
                 op, t, d, s = data.get('op'), data.get('t'), data.get('d', {}), data.get('s')
 
                 if s: self.last_sequence = s 
-                if op == 11: continue # Heartbeat ACK
+                if op == 11: continue  # Heartbeat ACK
 
-                if op == 9: # Invalid session detection
+                if op == 9:  # Invalid session detection
                     self.log("WARN", "Invalid session detected. Resetting session ID...")
                     self.session_id = None
+                    self.resume_gateway_url = None
+                    break
+
+                if op == 7:  # Reconnect request from Discord
+                    self.log("WARN", "Discord requested reconnect. Reconnecting...")
                     break
 
                 if t == 'READY':
                     self.session_id = d.get('session_id')
+                    self.resume_gateway_url = d.get('resume_gateway_url')  # New in API v10
                     self.user_id = d.get('user', {}).get('id')
                     self.log("SUCCESS", f"Connected as {d.get('user', {}).get('username')}")
                     
@@ -222,7 +229,7 @@ class AlwaysVoiceBot:
             time.sleep(REPLY_DELAY)
             try:
                 requests.post(
-                    f"https://discord.com/api/v9/channels/{channel_id}/messages",
+                    f"https://discord.com/api/v10/channels/{channel_id}/messages",  # Updated to v10
                     headers=self.headers,
                     json={"content": REPLY_MESSAGE},
                     timeout=5
@@ -240,10 +247,13 @@ class AlwaysVoiceBot:
                 try: self.ws.close()
                 except: pass
 
-            self.log("INFO", "Connecting to Discord Gateway...")
+            # Use resume_gateway_url if available (API v10 feature), otherwise use default
+            gateway_url = self.resume_gateway_url if self.resume_gateway_url else 'wss://gateway.discord.gg/?v=10&encoding=json'
+            
+            self.log("INFO", f"Connecting to Discord Gateway (v10)...")
             
             # Set a 60-second timeout to prevent connection hangs
-            self.ws = create_connection('wss://gateway.discord.gg/?v=9&encoding=json', timeout=60)
+            self.ws = create_connection(gateway_url, timeout=60)
             
             hello = json.loads(self.ws.recv())
             self.heartbeat_interval = hello['d']['heartbeat_interval']
@@ -260,14 +270,23 @@ class AlwaysVoiceBot:
                     }
                 }))
             else:
-                # Identify as a new session
+                # Identify as a new session with updated intents format for v10
                 self.ws.send(json.dumps({
                     "op": 2,
                     "d": {
                         "token": TOKEN,
-                        "properties": {"$os": "Windows", "$browser": "Chrome", "$device": "PC"},
-                        "presence": {"status": STATUS, "afk": False, "activities": []},
-                        "intents": 641 
+                        "properties": {
+                            "os": "Windows",  # Updated from "$os" to "os" for v10
+                            "browser": "Chrome",  # Updated from "$browser" to "browser"
+                            "device": "PC"  # Updated from "$device" to "device"
+                        },
+                        "presence": {
+                            "status": STATUS, 
+                            "afk": False, 
+                            "activities": [],
+                            "since": None  # Added for v10 compatibility
+                        },
+                        "intents": 641  # GUILDS (1) + GUILD_MESSAGES (512) + GUILD_VOICE_STATES (128)
                     }
                 }))
             
