@@ -8,7 +8,6 @@ from datetime import datetime
 from threading import Thread
 
 # --- Configuration ---
-# Environment variables with fallback default values
 STATUS = os.getenv("STATUS", "dnd")
 GUILD_ID = os.getenv("GUILD_ID", "")
 CHANNEL_ID = os.getenv("CHANNEL_ID", "")
@@ -23,7 +22,6 @@ VOICE_LIMIT = int(os.getenv("VOICE_LIMIT", "0"))
 
 class AlwaysVoiceBot:
     def __init__(self):
-        """Initializes the bot state and connection parameters."""
         self.ws = None
         self.heartbeat_interval = None
         self.heartbeat_count = 0
@@ -33,17 +31,16 @@ class AlwaysVoiceBot:
         self.username = "Unknown"
         self.session_id = None
         self.last_sequence = None
-        self.resume_gateway_url = None  # CRITICAL: Must use this URL for resuming
+        self.resume_gateway_url = None
         self.headers = {
             "Authorization": TOKEN,
             "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         }
         self.voice_users = set()
-        self.last_join_attempt = 0  # Tracks cooldown for voice connection attempts
+        self.last_join_attempt = 0 
 
     def log(self, level, message):
-        """Standardized console logging with ANSI color support."""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         colors = {
             "INFO": "\033[92m", "WARN": "\033[93m",
@@ -55,7 +52,6 @@ class AlwaysVoiceBot:
         sys.stdout.flush()
 
     def send_heartbeat(self):
-        """Sends periodic heartbeat payloads to keep the Gateway connection alive."""
         while self.is_running and self.ws:
             try:
                 if self.heartbeat_interval:
@@ -67,8 +63,6 @@ class AlwaysVoiceBot:
                 break
 
     def join_voice(self):
-        """Sends the OP 4 payload to join the voice channel with cooldown protection."""
-        # Prevents spamming connection requests if join fails (10 second cooldown)
         if time.time() - self.last_join_attempt < 10:
             return
 
@@ -85,19 +79,13 @@ class AlwaysVoiceBot:
                 }))
                 self.log("INFO", f"Joining Voice Channel: {CHANNEL_ID}")
                 self.last_join_attempt = time.time()
-
-                # Note: self.is_in_voice is updated via VOICE_STATE_UPDATE event for accuracy
-
             except Exception as e:
                 self.log("ERROR", f"Voice join failed: {e}")
 
     def leave_voice(self):
-        """Sends the OP 4 payload to disconnect from the voice channel."""
         if self.ws and self.is_in_voice:
             try:
-                # Update status immediately to prevent race conditions
                 self.is_in_voice = False
-
                 self.ws.send(json.dumps({
                     "op": 4,
                     "d": {
@@ -108,32 +96,24 @@ class AlwaysVoiceBot:
                     }
                 }))
                 self.log("INFO", "Leaving Voice Channel due to limit.")
-
             except Exception as e:
                 self.log("ERROR", f"Voice leave failed: {e}")
-                self.is_in_voice = True  # Revert status on failure
+                self.is_in_voice = True
 
     def check_voice_limit(self):
-        """Monitors user count and manages bot presence based on VOICE_LIMIT settings."""
         if VOICE_LIMIT == 0:
             return
-
         current_count = len(self.voice_users)
-
         if current_count < VOICE_LIMIT:
-            # Join channel if capacity is available
             if not self.is_in_voice:
                 self.log("INFO", "Voice limit safe. Joining.")
                 self.join_voice()
-
         elif current_count > VOICE_LIMIT:
-            # Leave channel immediately if capacity is exceeded
             if self.is_in_voice:
                 self.log("WARN", f"Over limit ({current_count} > {VOICE_LIMIT}). Leaving immediately.")
                 self.leave_voice()
 
     def handle_messages(self):
-        """Main event loop for processing Discord Gateway messages."""
         while self.is_running and self.ws:
             try:
                 msg = self.ws.recv()
@@ -142,59 +122,40 @@ class AlwaysVoiceBot:
                 try:
                     data = json.loads(msg)
                 except json.JSONDecodeError:
-                    self.log("WARN", "Received malformed JSON message. Ignoring.")
                     continue
 
                 op, t, d, s = data.get('op'), data.get('t'), data.get('d', {}), data.get('s')
 
                 if s: self.last_sequence = s
-                if op == 11: continue  # Heartbeat ACK
+                if op == 11: continue
 
-                if op == 9:  # Invalid session detection
-                    # d field indicates if we can resume (true) or must re-identify (false)
-                    can_resume = d if isinstance(d, bool) else False
-                    if can_resume:
-                        self.log("WARN", "Invalid session but resumable. Retrying resume...")
-                        time.sleep(1)
-                        break
-                    else:
-                        self.log("WARN", "Invalid session (not resumable). Must re-identify...")
-                        # Clear session data and force new IDENTIFY
-                        self.session_id = None
-                        self.resume_gateway_url = None
-                        time.sleep(1)
-                        break
+                if op == 9: 
+                    self.log("WARN", "Invalid session (OP 9). Resetting session entirely to prevent loop...")
+                    self.session_id = None
+                    self.resume_gateway_url = None
+                    time.sleep(1)
+                    break
 
-                if op == 7:  # Reconnect request from Discord
+                if op == 7: 
                     self.log("WARN", "Discord requested reconnect. Reconnecting immediately...")
-                    # Do NOT clear session_id - we want to resume
                     break
 
                 if t == 'READY':
-                    # Store ALL required data for resume
                     self.session_id = d.get('session_id')
-                    self.resume_gateway_url = d.get('resume_gateway_url')  # CRITICAL for v10
+                    self.resume_gateway_url = d.get('resume_gateway_url')
                     self.user_id = d.get('user', {}).get('id')
-
                     self.log("SUCCESS", f"Connected as {d.get('user', {}).get('username')}")
-                    self.log("INFO", f"Session ID: {self.session_id[:16]}...")
-                    if self.resume_gateway_url:
-                        self.log("INFO", f"Resume URL: {self.resume_gateway_url[:50]}...")
-
-                    # Reset voice state and join on connection
                     self.is_in_voice = False
                     self.last_join_attempt = 0
                     self.join_voice()
 
                 elif t == 'RESUMED':
                     self.log("SUCCESS", f"Session resumed successfully (seq: {self.last_sequence})")
-                    # After resume, rejoin voice if we were in it
                     self.is_in_voice = False
                     self.last_join_attempt = 0
                     self.join_voice()
 
                 elif t == 'GUILD_CREATE':
-                    # Sync voice users for the target channel
                     if d.get('id') != GUILD_ID:
                         continue
                     self.voice_users = set()
@@ -204,12 +165,9 @@ class AlwaysVoiceBot:
                     self.check_voice_limit()
 
                 elif t == 'VOICE_STATE_UPDATE':
-                    # Handle bot's own voice state transitions
                     if str(d.get('user_id')) == self.user_id:
                         was_in_voice = self.is_in_voice
                         self.is_in_voice = d.get('channel_id') is not None
-
-                        # Force rejoin if bot is disconnected or kicked
                         if was_in_voice and not self.is_in_voice:
                             self.log("WARN", "Bot disconnected from voice. Force rejoining in 5 seconds...")
                             time.sleep(5)
@@ -217,18 +175,15 @@ class AlwaysVoiceBot:
                             self.join_voice()
                             continue
 
-                    # Track voice state changes for other users
                     if d.get('channel_id') == CHANNEL_ID:
                         self.voice_users.add(str(d.get('user_id')))
                     else:
                         user_id_str = str(d.get('user_id'))
                         if user_id_str in self.voice_users:
                             self.voice_users.remove(user_id_str)
-
                     self.check_voice_limit()
 
                 elif t == 'MESSAGE_CREATE' and AUTO_REPLY:
-                    # Logic for automatic replies to triggers and mentions
                     if str(d.get('author', {}).get('id')) != self.user_id:
                         content = d.get('content', '').lower()
                         mentions = [m.get('id') for m in d.get('mentions', [])]
@@ -240,7 +195,6 @@ class AlwaysVoiceBot:
                 break
 
     def send_reply(self, channel_id):
-        """Asynchronously sends a reply message to the specified channel."""
         def callback():
             time.sleep(REPLY_DELAY)
             try:
@@ -257,33 +211,26 @@ class AlwaysVoiceBot:
         Thread(target=callback, daemon=True).start()
 
     def connect(self):
-        """Establishes a connection to the Discord Gateway and handles Identify/Resume."""
         try:
             if self.ws:
                 try: self.ws.close()
                 except: pass
 
-            # CRITICAL: Per Discord docs, MUST use resume_gateway_url when resuming
             attempting_resume = bool(self.session_id and self.last_sequence and self.resume_gateway_url)
 
             if attempting_resume:
-                # Use the resume_gateway_url with same version and encoding
                 gateway_url = f"{self.resume_gateway_url}?v=10&encoding=json"
-                self.log("INFO", f"Connecting to resume gateway for session resume...")
+                self.log("INFO", f"Connecting to resume gateway...")
             else:
-                # Use standard gateway for new connections
                 gateway_url = 'wss://gateway.discord.gg/?v=10&encoding=json'
                 self.log("INFO", "Connecting to Discord Gateway (v10)...")
 
-            # Set a 60-second timeout to prevent connection hangs
             self.ws = create_connection(gateway_url, timeout=60)
-
             hello = json.loads(self.ws.recv())
             self.heartbeat_interval = hello['d']['heartbeat_interval']
 
             if attempting_resume:
-                # Send Resume (OP 6) with session_id and seq
-                self.log("RETRY", f"Sending RESUME (session: {self.session_id[:16]}..., seq: {self.last_sequence})")
+                self.log("RETRY", f"Sending RESUME (session: {self.session_id[:16]}...)")
                 self.ws.send(json.dumps({
                     "op": 6,
                     "d": {
@@ -293,16 +240,15 @@ class AlwaysVoiceBot:
                     }
                 }))
             else:
-                # Send Identify (OP 2) for new session
                 self.log("INFO", "Sending IDENTIFY for new session...")
                 self.ws.send(json.dumps({
                     "op": 2,
                     "d": {
                         "token": TOKEN,
                         "properties": {
-                            "os": "Windows",  # v10 uses "os" not "$os"
-                            "browser": "Chrome",
-                            "device": "PC"
+                            "$os": "Windows",
+                            "$browser": "Chrome",
+                            "$device": "PC"
                         },
                         "presence": {
                             "status": STATUS,
@@ -310,7 +256,7 @@ class AlwaysVoiceBot:
                             "activities": [],
                             "since": None
                         },
-                        "intents": 641  # GUILDS (1) + GUILD_MESSAGES (512) + GUILD_VOICE_STATES (128)
+                        "intents": 641 
                     }
                 }))
 
@@ -318,25 +264,20 @@ class AlwaysVoiceBot:
             return True
         except Exception as e:
             self.log("ERROR", f"Connection failed: {e}")
-            # On connection failure, clear resume data to force fresh IDENTIFY next time
-            if attempting_resume:
-                self.log("WARN", "Resume failed, will try fresh IDENTIFY on next attempt")
-                self.session_id = None
-                self.resume_gateway_url = None
+            self.session_id = None
+            self.resume_gateway_url = None
             return False
 
     def start(self):
-        """Main entry point to start the bot with automatic reconnection logic."""
         if not TOKEN:
             self.log("ERROR", "No token provided. Please set the TOKEN environment variable.")
             return
 
         while self.is_running:
             if self.connect():
-                time.sleep(2)  # Small delay to ensure connection is stable
+                time.sleep(2)
                 self.handle_messages()
 
-            # Wait before reconnecting to avoid rate limits
             self.log("WARN", "Gateway connection lost. Retrying in 5 seconds...")
             time.sleep(5)
 
