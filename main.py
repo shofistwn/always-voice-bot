@@ -1,3 +1,12 @@
+"""
+AlwaysVoiceBot Module
+
+A Discord self-bot script designed to maintain a presence in a specific voice channel.
+This script employs a "fail-fast" architecture: any connection drop, invalid session, 
+or unhandled exception will immediately terminate the process (sys.exit(1)). 
+This relies on Docker's `restart: unless-stopped` policy to handle clean recoveries.
+"""
+
 import os
 import sys
 import json
@@ -7,7 +16,7 @@ from websocket import create_connection
 from datetime import datetime
 from threading import Thread
 
-# --- Configuration ---
+# Configuration variables loaded from environment
 STATUS = os.getenv("STATUS", "dnd")
 GUILD_ID = os.getenv("GUILD_ID", "")
 CHANNEL_ID = os.getenv("CHANNEL_ID", "")
@@ -21,6 +30,11 @@ REPLY_DELAY = int(os.getenv("REPLY_DELAY", "5"))
 VOICE_LIMIT = int(os.getenv("VOICE_LIMIT", "0"))
 
 class AlwaysVoiceBot:
+    """
+    Manages the Discord WebSocket connection, voice state presence, 
+    and optional auto-reply functionality.
+    """
+
     def __init__(self):
         self.ws = None
         self.heartbeat_interval = None
@@ -32,15 +46,16 @@ class AlwaysVoiceBot:
         self.session_id = None
         self.last_sequence = None
         self.resume_gateway_url = None
+        self.voice_users = set()
+        self.last_join_attempt = 0 
         self.headers = {
             "Authorization": TOKEN,
             "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         }
-        self.voice_users = set()
-        self.last_join_attempt = 0 
 
     def log(self, level, message):
+        """Outputs formatted log messages with timestamps and basic color coding."""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         colors = {
             "INFO": "\033[92m", "WARN": "\033[93m",
@@ -52,6 +67,10 @@ class AlwaysVoiceBot:
         sys.stdout.flush()
 
     def send_heartbeat(self):
+        """
+        Runs in a separate thread to periodically send heartbeat (OP 1) 
+        payloads to the Discord Gateway to maintain the connection.
+        """
         while self.is_running and self.ws:
             try:
                 if self.heartbeat_interval:
@@ -60,9 +79,12 @@ class AlwaysVoiceBot:
                         self.ws.send(json.dumps({"op": 1, "d": self.last_sequence}))
                         self.heartbeat_count += 1
             except Exception:
+                # Allow thread to terminate silently on error.
+                # The main message receiver will detect the broken pipe and trigger a crash.
                 break
 
     def join_voice(self):
+        """Sends the payload (OP 4) to join the configured voice channel."""
         if time.time() - self.last_join_attempt < 10:
             return
 
@@ -83,6 +105,7 @@ class AlwaysVoiceBot:
                 self.log("ERROR", f"Voice join failed: {e}")
 
     def leave_voice(self):
+        """Sends the payload (OP 4) to disconnect from the current voice channel."""
         if self.ws and self.is_in_voice:
             try:
                 self.is_in_voice = False
@@ -101,8 +124,10 @@ class AlwaysVoiceBot:
                 self.is_in_voice = True
 
     def check_voice_limit(self):
+        """Evaluates the current channel population against the VOICE_LIMIT."""
         if VOICE_LIMIT == 0:
             return
+        
         current_count = len(self.voice_users)
         if current_count < VOICE_LIMIT:
             if not self.is_in_voice:
@@ -114,10 +139,16 @@ class AlwaysVoiceBot:
                 self.leave_voice()
 
     def handle_messages(self):
+        """
+        Main loop for listening to incoming WebSocket messages.
+        Exits the process entirely (sys.exit) upon encountering fatal opcodes or socket closure.
+        """
         while self.is_running and self.ws:
             try:
                 msg = self.ws.recv()
-                if not msg: break
+                if not msg: 
+                    self.log("ERROR", "Websocket connection closed unexpectedly. Crashing...")
+                    sys.exit(1)
 
                 try:
                     data = json.loads(msg)
@@ -126,25 +157,26 @@ class AlwaysVoiceBot:
 
                 op, t, d, s = data.get('op'), data.get('t'), data.get('d', {}), data.get('s')
 
-                if s: self.last_sequence = s
-                if op == 11: continue
+                if s: 
+                    self.last_sequence = s
+                if op == 11: 
+                    continue
 
+                # Terminate process on invalid session (9) or reconnect request (7)
                 if op == 9: 
-                    self.log("WARN", "Invalid session (OP 9). Resetting session entirely to prevent loop...")
-                    self.session_id = None
-                    self.resume_gateway_url = None
-                    time.sleep(1)
-                    break
+                    self.log("ERROR", "Invalid session (OP 9). Cannot resume. Crashing to trigger Docker restart...")
+                    sys.exit(1)
 
                 if op == 7: 
-                    self.log("WARN", "Discord requested reconnect. Reconnecting immediately...")
-                    break
+                    self.log("ERROR", "Discord requested reconnect (OP 7). Crashing to trigger Docker restart...")
+                    sys.exit(1)
 
                 if t == 'READY':
                     self.session_id = d.get('session_id')
                     self.resume_gateway_url = d.get('resume_gateway_url')
                     self.user_id = d.get('user', {}).get('id')
                     self.log("SUCCESS", f"Connected as {d.get('user', {}).get('username')}")
+                    
                     self.is_in_voice = False
                     self.last_join_attempt = 0
                     self.join_voice()
@@ -165,9 +197,11 @@ class AlwaysVoiceBot:
                     self.check_voice_limit()
 
                 elif t == 'VOICE_STATE_UPDATE':
+                    # Handle bot's own voice state
                     if str(d.get('user_id')) == self.user_id:
                         was_in_voice = self.is_in_voice
                         self.is_in_voice = d.get('channel_id') is not None
+                        
                         if was_in_voice and not self.is_in_voice:
                             self.log("WARN", "Bot disconnected from voice. Force rejoining in 5 seconds...")
                             time.sleep(5)
@@ -175,6 +209,7 @@ class AlwaysVoiceBot:
                             self.join_voice()
                             continue
 
+                    # Track channel population for limit enforcement
                     if d.get('channel_id') == CHANNEL_ID:
                         self.voice_users.add(str(d.get('user_id')))
                     else:
@@ -187,14 +222,18 @@ class AlwaysVoiceBot:
                     if str(d.get('author', {}).get('id')) != self.user_id:
                         content = d.get('content', '').lower()
                         mentions = [m.get('id') for m in d.get('mentions', [])]
+                        
                         if self.user_id in mentions and REPLY_TRIGGER in content:
                             self.send_reply(d.get('channel_id'))
 
             except Exception as e:
-                self.log("ERROR", f"Message receiver error: {e}")
-                break
+                self.log("ERROR", f"Message receiver encountered a fatal error: {e}. Crashing...")
+                sys.exit(1)
 
     def send_reply(self, channel_id):
+        """
+        Dispatches an HTTP POST request in a background thread to send an auto-reply message.
+        """
         def callback():
             time.sleep(REPLY_DELAY)
             try:
@@ -211,16 +250,22 @@ class AlwaysVoiceBot:
         Thread(target=callback, daemon=True).start()
 
     def connect(self):
+        """
+        Establishes the WebSocket connection to the Discord Gateway.
+        Attempts to resume a previous session if session details are available.
+        """
         try:
             if self.ws:
-                try: self.ws.close()
-                except: pass
+                try: 
+                    self.ws.close()
+                except: 
+                    pass
 
             attempting_resume = bool(self.session_id and self.last_sequence and self.resume_gateway_url)
 
             if attempting_resume:
                 gateway_url = f"{self.resume_gateway_url}?v=10&encoding=json"
-                self.log("INFO", f"Connecting to resume gateway...")
+                self.log("INFO", "Connecting to resume gateway...")
             else:
                 gateway_url = 'wss://gateway.discord.gg/?v=10&encoding=json'
                 self.log("INFO", "Connecting to Discord Gateway (v10)...")
@@ -262,24 +307,27 @@ class AlwaysVoiceBot:
 
             Thread(target=self.send_heartbeat, daemon=True).start()
             return True
+
         except Exception as e:
-            self.log("ERROR", f"Connection failed: {e}")
-            self.session_id = None
-            self.resume_gateway_url = None
-            return False
+            self.log("ERROR", f"Connection failed: {e}. Crashing...")
+            sys.exit(1)
 
     def start(self):
+        """
+        Entry point for the bot. Initiates a single connection attempt.
+        If the connection breaks or the loop finishes, it forces a process exit.
+        """
         if not TOKEN:
             self.log("ERROR", "No token provided. Please set the TOKEN environment variable.")
-            return
+            sys.exit(1)
 
-        while self.is_running:
-            if self.connect():
-                time.sleep(2)
-                self.handle_messages()
+        # Single execution flow: Connect once, handle messages, and crash if interrupted.
+        if self.connect():
+            time.sleep(2)
+            self.handle_messages()
 
-            self.log("WARN", "Gateway connection lost. Retrying in 5 seconds...")
-            time.sleep(5)
+        self.log("ERROR", "Bot process ended unexpectedly. Crashing for Docker restart...")
+        sys.exit(1)
 
 if __name__ == "__main__":
     bot = AlwaysVoiceBot()
