@@ -29,6 +29,18 @@ REPLY_MESSAGE = os.getenv("REPLY_MESSAGE", "yes")
 REPLY_DELAY = int(os.getenv("REPLY_DELAY", "5"))
 VOICE_LIMIT = int(os.getenv("VOICE_LIMIT", "0"))
 
+# Rich Presence configuration
+RICH_PRESENCE_ENABLED = os.getenv("RICH_PRESENCE_ENABLED", "True").lower() == "true"
+RICH_PRESENCE_APP_ID = os.getenv("RICH_PRESENCE_APP_ID", "")
+RICH_PRESENCE_NAME = os.getenv("RICH_PRESENCE_NAME", "Rich Presence")
+RICH_PRESENCE_DETAILS = os.getenv("RICH_PRESENCE_DETAILS", "")
+RICH_PRESENCE_STATE = os.getenv("RICH_PRESENCE_STATE", "")
+RICH_PRESENCE_BUTTON1_LABEL = os.getenv("RICH_PRESENCE_BUTTON1_LABEL", "")
+RICH_PRESENCE_BUTTON1_URL = os.getenv("RICH_PRESENCE_BUTTON1_URL", "")
+RICH_PRESENCE_BUTTON2_LABEL = os.getenv("RICH_PRESENCE_BUTTON2_LABEL", "")
+RICH_PRESENCE_BUTTON2_URL = os.getenv("RICH_PRESENCE_BUTTON2_URL", "")
+RICH_PRESENCE_UPDATE_INTERVAL = int(os.getenv("RICH_PRESENCE_UPDATE_INTERVAL", "300"))
+
 class AlwaysVoiceBot:
     """
     Manages the Discord WebSocket connection, voice state presence, 
@@ -47,7 +59,8 @@ class AlwaysVoiceBot:
         self.last_sequence = None
         self.resume_gateway_url = None
         self.voice_users = set()
-        self.last_join_attempt = 0 
+        self.last_join_attempt = 0
+        self.start_timestamp = int(time.time() * 1000)
         self.headers = {
             "Authorization": TOKEN,
             "Content-Type": "application/json",
@@ -65,6 +78,80 @@ class AlwaysVoiceBot:
         color = colors.get(level, "")
         print(f"[{timestamp}] [{color}{level}{reset}] {message}")
         sys.stdout.flush()
+
+    def build_rich_presence_activities(self):
+        """Builds the Rich Presence activity list."""
+        if RICH_PRESENCE_APP_ID:
+            playing_activity = {
+                "name": RICH_PRESENCE_NAME,
+                "type": 0,
+                "application_id": RICH_PRESENCE_APP_ID,
+                "timestamps": {
+                    "start": self.start_timestamp
+                }
+            }
+            if RICH_PRESENCE_DETAILS:
+                playing_activity["details"] = RICH_PRESENCE_DETAILS
+            if RICH_PRESENCE_STATE:
+                playing_activity["state"] = RICH_PRESENCE_STATE
+
+            # Add clickable buttons (max 2)
+            buttons = []
+            button_urls = []
+            if RICH_PRESENCE_BUTTON1_LABEL and RICH_PRESENCE_BUTTON1_URL:
+                buttons.append(RICH_PRESENCE_BUTTON1_LABEL)
+                button_urls.append(RICH_PRESENCE_BUTTON1_URL)
+            if RICH_PRESENCE_BUTTON2_LABEL and RICH_PRESENCE_BUTTON2_URL:
+                buttons.append(RICH_PRESENCE_BUTTON2_LABEL)
+                button_urls.append(RICH_PRESENCE_BUTTON2_URL)
+            if buttons:
+                playing_activity["buttons"] = buttons
+                playing_activity["metadata"] = {"button_urls": button_urls}
+        else:
+            playing_activity = {
+                "name": RICH_PRESENCE_NAME,
+                "type": 0,
+                "timestamps": {
+                    "start": self.start_timestamp
+                }
+            }
+            if RICH_PRESENCE_DETAILS:
+                playing_activity["details"] = RICH_PRESENCE_DETAILS
+
+        return [playing_activity]
+
+    def update_presence(self):
+        """Sends a presence update (OP 3) to refresh the Rich Presence activity."""
+        if not RICH_PRESENCE_ENABLED or not self.ws:
+            return
+
+        try:
+            activities = self.build_rich_presence_activities()
+            self.ws.send(json.dumps({
+                "op": 3,
+                "d": {
+                    "since": 0,
+                    "activities": activities,
+                    "status": STATUS,
+                    "afk": False
+                }
+            }))
+            self.log("INFO", "Rich Presence updated successfully")
+        except Exception as e:
+            self.log("ERROR", f"Failed to update Rich Presence: {e}")
+
+    def presence_updater(self):
+        """
+        Runs in a background thread to periodically refresh the Rich Presence
+        activity, ensuring it stays visible.
+        """
+        while self.is_running and self.ws:
+            try:
+                time.sleep(RICH_PRESENCE_UPDATE_INTERVAL)
+                if self.ws and self.ws.connected:
+                    self.update_presence()
+            except Exception:
+                break
 
     def send_heartbeat(self):
         """
@@ -177,15 +264,29 @@ class AlwaysVoiceBot:
                     self.user_id = d.get('user', {}).get('id')
                     self.log("SUCCESS", f"Connected as {d.get('user', {}).get('username')}")
                     
+                    self.start_timestamp = int(time.time() * 1000)
                     self.is_in_voice = False
                     self.last_join_attempt = 0
                     self.join_voice()
+
+                    # Activate Rich Presence after successful connection
+                    if RICH_PRESENCE_ENABLED:
+                        time.sleep(2)
+                        self.update_presence()
+                        Thread(target=self.presence_updater, daemon=True).start()
+                        self.log("SUCCESS", "Rich Presence activated")
 
                 elif t == 'RESUMED':
                     self.log("SUCCESS", f"Session resumed successfully (seq: {self.last_sequence})")
                     self.is_in_voice = False
                     self.last_join_attempt = 0
                     self.join_voice()
+
+                    # Refresh Rich Presence after session resume
+                    if RICH_PRESENCE_ENABLED:
+                        time.sleep(2)
+                        self.update_presence()
+                        self.log("SUCCESS", "Rich Presence refreshed after resume")
 
                 elif t == 'GUILD_CREATE':
                     if d.get('id') != GUILD_ID:
@@ -204,9 +305,11 @@ class AlwaysVoiceBot:
                         
                         if was_in_voice and not self.is_in_voice:
                             self.log("WARN", "Bot disconnected from voice. Force rejoining in 5 seconds...")
-                            time.sleep(5)
-                            self.last_join_attempt = 0
-                            self.join_voice()
+                            def _delayed_rejoin():
+                                time.sleep(5)
+                                self.last_join_attempt = 0
+                                self.join_voice()
+                            Thread(target=_delayed_rejoin, daemon=True).start()
                             continue
 
                     # Track channel population for limit enforcement
@@ -258,7 +361,7 @@ class AlwaysVoiceBot:
             if self.ws:
                 try: 
                     self.ws.close()
-                except: 
+                except Exception: 
                     pass
 
             attempting_resume = bool(self.session_id and self.last_sequence and self.resume_gateway_url)
@@ -298,9 +401,10 @@ class AlwaysVoiceBot:
                         "presence": {
                             "status": STATUS,
                             "afk": False,
-                            "activities": [],
-                            "since": None
+                            "activities": self.build_rich_presence_activities() if RICH_PRESENCE_ENABLED else [],
+                            "since": 0
                         },
+                        # Intents: GUILDS (1) | GUILD_VOICE_STATES (128) | GUILD_MESSAGES (512) = 641
                         "intents": 641 
                     }
                 }))
