@@ -92,6 +92,43 @@ def extract_embed_text(embed):
         parts.append(f"Embed Footer: {embed['footer']['text']}")
     return "\n".join(parts)
 
+def clean_links(text):
+    if not text:
+        return text
+
+    # Handle nested image-in-link: [![alt](img_url)](link_url) -> hapus semua
+    text = re.sub(r'\[!\[.*?\]\((?:https?://|www\.)\S+?\)\]\((?:https?://|www\.)\S+?\)', '', text)
+
+    # Markdown link biasa: [text](url) -> text
+    text = re.sub(r'\[(.*?)\]\((?:https?://|www\.)\S+\)', r'\1', text)
+
+    # Plain URL (case-insensitive)
+    url_pattern = r'(?:https?://|www\.)([a-zA-Z0-9.-]+)(\/[^\s]*)?'
+
+    def replace_url(match):
+        host = match.group(1)
+        path = match.group(2) or ''
+
+        trailing_host = ''
+        while host and host[-1] in '.,!?;:':
+            trailing_host = host[-1] + trailing_host
+            host = host[:-1]
+
+        trailing_path = ''
+        if path:
+            while path and path[-1] in '.,!?;:':
+                trailing_path = path[-1] + trailing_path
+                path = path[:-1]
+
+        if host.lower().startswith('www.'):
+            host = host[4:]
+
+        clean_host = host.replace('.', ',')
+        return f"{clean_host}{path}{trailing_host}{trailing_path}"
+
+    text = re.sub(url_pattern, replace_url, text, flags=re.IGNORECASE)
+    return text
+
 def send_ai_reply_async(channel_id, raw_content, message_data, bot_user_id, headers):
     """
     Strips the bot mention from the message, queries the OpenRouter AI,
@@ -179,6 +216,9 @@ def send_ai_reply_async(channel_id, raw_content, message_data, bot_user_id, head
         ai_response = ask_ai(clean_content, referenced_context=referenced_context)
         if not ai_response:
             return
+
+        # Remove links from the AI response before sending to Discord
+        ai_response = clean_links(ai_response)
 
         # Discord message limit is 2000 characters
         if len(ai_response) > 2000:
