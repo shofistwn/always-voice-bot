@@ -17,7 +17,7 @@ REPLY_DELAY = int(os.getenv("REPLY_DELAY", "5"))
 
 # AI Chat configuration (Gemini API)
 AI_ENABLED = os.getenv("AI_ENABLED", "False").lower() == "true"
-AI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+AI_API_KEYS = [k.strip() for k in os.getenv("GEMINI_API_KEYS", "").split(",") if k.strip()]
 AI_MODEL = os.getenv("AI_MODEL", "gemini-2.5-flash")
 AI_SYSTEM_PROMPT = os.getenv("AI_SYSTEM_PROMPT", "You are a helpful assistant. Respond concisely in the same language as the user.")
 AI_MAX_TOKENS = int(os.getenv("AI_MAX_TOKENS", "500"))

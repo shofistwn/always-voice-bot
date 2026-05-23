@@ -7,7 +7,7 @@ from config import (
     REPLY_DELAY,
     REPLY_MESSAGE,
     AI_SYSTEM_PROMPT,
-    AI_API_KEY,
+    AI_API_KEYS,
     AI_MODEL,
     AI_MAX_TOKENS
 )
@@ -32,12 +32,19 @@ def send_reply_async(channel_id, headers):
 
     Thread(target=callback, daemon=True).start()
 
+current_api_key_index = 0
+
 def ask_ai(prompt, referenced_context=None):
     """Sends a prompt to the Gemini API and returns the AI-generated response.
     
     If referenced_context is provided, it is included as additional context
     so the AI understands the message being replied to.
     """
+    global current_api_key_index
+    if not AI_API_KEYS:
+        log("ERROR", "No Gemini API keys configured.")
+        return "Sorry, the bot is not configured with an API key."
+
     try:
         system_instructions = [AI_SYSTEM_PROMPT]
 
@@ -66,23 +73,35 @@ def ask_ai(prompt, referenced_context=None):
             ]
         }
 
-        response = requests.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{AI_MODEL}:generateContent?key={AI_API_KEY}",
-            headers={"Content-Type": "application/json"},
-            json=payload,
-            timeout=30,
-        )
-        
-        if response.status_code != 200:
-            log("ERROR", f"Gemini API request failed with status {response.status_code}: {response.text}")
-            return "Sorry, I couldn't generate a response."
+        for attempt in range(len(AI_API_KEYS)):
+            current_key = AI_API_KEYS[current_api_key_index]
+            response = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{AI_MODEL}:generateContent?key={current_key}",
+                headers={"Content-Type": "application/json"},
+                json=payload,
+                timeout=30,
+            )
+            
+            if response.status_code == 429 or response.status_code == 403 or (response.status_code == 400 and "quota" in response.text.lower()):
+                log("WARN", f"API key index {current_api_key_index} hit limit/error ({response.status_code}). Rotating...")
+                current_api_key_index = (current_api_key_index + 1) % len(AI_API_KEYS)
+                continue
+            elif response.status_code != 200:
+                log("ERROR", f"Gemini API request failed with status {response.status_code}: {response.text}")
+                return "Sorry, I couldn't generate a response."
 
-        data = response.json()
-        try:
-            return data["candidates"][0]["content"]["parts"][0]["text"]
-        except (KeyError, IndexError):
-            log("ERROR", f"Unexpected Gemini API response: {data}")
-            return "Sorry, I couldn't generate a response."
+            data = response.json()
+            try:
+                result = data["candidates"][0]["content"]["parts"][0]["text"]
+                # Rotate key for the next request (Round Robin)
+                current_api_key_index = (current_api_key_index + 1) % len(AI_API_KEYS)
+                return result
+            except (KeyError, IndexError):
+                log("ERROR", f"Unexpected Gemini API response: {data}")
+                return "Sorry, I couldn't generate a response."
+
+        log("ERROR", "All Gemini API keys failed or hit limits.")
+        return "Sorry, all API keys have hit their limits. Please try again later."
     except Exception as e:
         log("ERROR", f"Gemini API request failed: {e}")
         return None

@@ -94,7 +94,7 @@ When the bot is mentioned and the message does not contain the static `REPLY_TRI
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `AI_ENABLED` | `False` | Enable/disable dynamic AI chat via Gemini API. |
-| `GEMINI_API_KEY` | *(empty)* | Your Gemini API Key. |
+| `GEMINI_API_KEYS` | *(empty)* | Your Gemini API Keys (comma-separated). |
 | `AI_MODEL` | `gemini-2.5-flash` | The Gemini model to query on the Gemini API. |
 | `AI_SYSTEM_PROMPT` | *(see below)* | Instruction prompt given to the AI. |
 | `AI_MAX_TOKENS` | `500` | Maximum response token limit. |
