@@ -1,17 +1,19 @@
 import os
 
 # Configuration variables loaded from environment
-STATUS = os.getenv("STATUS", "dnd")
 GUILD_ID = os.getenv("GUILD_ID", "")
 CHANNEL_ID = os.getenv("CHANNEL_ID", "")
 TOKEN = os.getenv("TOKEN")
+VOICE_LIMIT = int(os.getenv("VOICE_LIMIT", "0"))
+STATUS = os.getenv("STATUS", "dnd")
 SELF_MUTE = os.getenv("SELF_MUTE", "True").lower() == "true"
 SELF_DEAF = os.getenv("SELF_DEAF", "False").lower() == "true"
-AUTO_REPLY = os.getenv("AUTO_REPLY", "True").lower() == "true"
+
+# Auto Reply configuration
+AUTO_REPLY = os.getenv("AUTO_REPLY", "False").lower() == "true"
 REPLY_TRIGGER = os.getenv("REPLY_TRIGGER", "hey wake up!").lower()
 REPLY_MESSAGE = os.getenv("REPLY_MESSAGE", "yes")
 REPLY_DELAY = int(os.getenv("REPLY_DELAY", "5"))
-VOICE_LIMIT = int(os.getenv("VOICE_LIMIT", "0"))
 
 # AI Chat configuration (OpenRouter)
 AI_ENABLED = os.getenv("AI_ENABLED", "False").lower() == "true"
@@ -22,7 +24,7 @@ AI_MAX_TOKENS = int(os.getenv("AI_MAX_TOKENS", "500"))
 AI_ALLOWED_USER_IDS = [uid.strip() for uid in os.getenv("AI_ALLOWED_USER_IDS", "").split(",") if uid.strip()]
 
 # Rich Presence configuration
-RICH_PRESENCE_ENABLED = os.getenv("RICH_PRESENCE_ENABLED", "True").lower() == "true"
+RICH_PRESENCE_ENABLED = os.getenv("RICH_PRESENCE_ENABLED", "False").lower() == "true"
 RICH_PRESENCE_APP_ID = os.getenv("RICH_PRESENCE_APP_ID", "")
 RICH_PRESENCE_NAME = os.getenv("RICH_PRESENCE_NAME", "Rich Presence")
 RICH_PRESENCE_DETAILS = os.getenv("RICH_PRESENCE_DETAILS", "")
