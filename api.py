@@ -33,41 +33,58 @@ def send_reply_async(channel_id, headers):
     Thread(target=callback, daemon=True).start()
 
 def ask_ai(prompt, referenced_context=None):
-    """Sends a prompt to the OpenRouter API and returns the AI-generated response.
+    """Sends a prompt to the Gemini API and returns the AI-generated response.
     
     If referenced_context is provided, it is included as additional context
     so the AI understands the message being replied to.
     """
     try:
-        messages = [{"role": "system", "content": AI_SYSTEM_PROMPT}]
+        system_instructions = [AI_SYSTEM_PROMPT]
 
         if referenced_context:
-            messages.append({
-                "role": "system",
-                "content": f"The user is replying to the following message for context:\\n"
-                           f"Author: {referenced_context['author']}\\n"
-                           f"Content: {referenced_context['content']}"
-            })
+            system_instructions.append(
+                f"The user is replying to the following message for context:\n"
+                f"Author: {referenced_context['author']}\n"
+                f"Content: {referenced_context['content']}"
+            )
 
-        messages.append({"role": "user", "content": prompt})
+        payload = {
+            "systemInstruction": {
+                "parts": [{"text": "\n\n".join(system_instructions)}]
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": prompt}]
+                }
+            ],
+            "generationConfig": {
+                "maxOutputTokens": AI_MAX_TOKENS,
+            },
+            "tools": [
+                {"google_search": {}}
+            ]
+        }
 
         response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {AI_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": AI_MODEL,
-                "messages": messages,
-                "max_tokens": AI_MAX_TOKENS,
-            },
+            f"https://generativelanguage.googleapis.com/v1beta/models/{AI_MODEL}:generateContent?key={AI_API_KEY}",
+            headers={"Content-Type": "application/json"},
+            json=payload,
             timeout=30,
         )
+        
+        if response.status_code != 200:
+            log("ERROR", f"Gemini API request failed with status {response.status_code}: {response.text}")
+            return "Sorry, I couldn't generate a response."
+
         data = response.json()
-        return data.get("choices", [{}])[0].get("message", {}).get("content", "Sorry, I couldn't generate a response.")
+        try:
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError):
+            log("ERROR", f"Unexpected Gemini API response: {data}")
+            return "Sorry, I couldn't generate a response."
     except Exception as e:
-        log("ERROR", f"OpenRouter AI request failed: {e}")
+        log("ERROR", f"Gemini API request failed: {e}")
         return None
 
 def extract_embed_text(embed):
@@ -131,7 +148,7 @@ def clean_links(text):
 
 def send_ai_reply_async(channel_id, raw_content, message_data, bot_user_id, headers):
     """
-    Strips the bot mention from the message, queries the OpenRouter AI,
+    Strips the bot mention from the message, queries the Gemini API,
     and sends the response as a reply to the original message in a background thread.
     """
     def callback():

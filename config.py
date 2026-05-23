@@ -15,10 +15,10 @@ REPLY_TRIGGER = os.getenv("REPLY_TRIGGER", "hey wake up!").lower()
 REPLY_MESSAGE = os.getenv("REPLY_MESSAGE", "yes")
 REPLY_DELAY = int(os.getenv("REPLY_DELAY", "5"))
 
-# AI Chat configuration (OpenRouter)
+# AI Chat configuration (Gemini API)
 AI_ENABLED = os.getenv("AI_ENABLED", "False").lower() == "true"
-AI_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-AI_MODEL = os.getenv("AI_MODEL", "google/gemini-3.1-flash-lite")
+AI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+AI_MODEL = os.getenv("AI_MODEL", "gemini-2.5-flash")
 AI_SYSTEM_PROMPT = os.getenv("AI_SYSTEM_PROMPT", "You are a helpful assistant. Respond concisely in the same language as the user.")
 AI_MAX_TOKENS = int(os.getenv("AI_MAX_TOKENS", "500"))
 AI_ALLOWED_USER_IDS = [uid.strip() for uid in os.getenv("AI_ALLOWED_USER_IDS", "").split(",") if uid.strip()]

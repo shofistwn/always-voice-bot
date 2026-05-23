@@ -2,7 +2,7 @@
 
 A Discord self-bot designed to maintain a persistent presence in a specific voice channel. Built with a **fail-fast** architecture — any connection drop or unhandled exception will terminate the process, relying on Docker's `restart: unless-stopped` policy for automatic recovery.
 
-Additionally, this bot features a smart **AI-Powered Chat** using OpenRouter to intelligently answer mentions, with robust context awareness (handling replied-to message texts and complex embedded structures), as well as a customizable **Rich Presence** to showcase activities and services.
+Additionally, this bot features a smart **AI-Powered Chat** using the Gemini API to intelligently answer mentions, with robust context awareness (handling replied-to message texts and complex embedded structures), as well as a customizable **Rich Presence** to showcase activities and services.
 
 ## Features
 
@@ -10,7 +10,7 @@ Additionally, this bot features a smart **AI-Powered Chat** using OpenRouter to 
 - **Auto-Rejoin** — Reconnects if disconnected (with a 5-second delay).
 - **Voice Limit** — Leaves the channel if user count exceeds a configurable limit, and automatically rejoins once it is safe.
 - **Auto-Reply** — Responds with a predefined static message when mentioned with a trigger phrase.
-- **AI Chat (OpenRouter)** — Dynamically responds to mentions using state-of-the-art AI models when not matching the static auto-reply trigger.
+- **AI Chat (Gemini API)** — Dynamically responds to mentions using state-of-the-art Gemini models when not matching the static auto-reply trigger.
 - **Context-Aware Replies** — Understands referenced/replied-to messages, extracting both plain text and detailed fields from Discord Embeds to provide high-quality AI responses.
 - **Rich Presence** — Displays custom activity status (e.g. promoting your service, custom details, state, and up to 2 clickable buttons with a continuous uptime timer).
 - **Session Resume** — Attempts to resume existing sessions on gateway reconnection instead of creating new ones.
@@ -87,15 +87,15 @@ All configuration is done via environment variables in the `.env` file:
 | `REPLY_MESSAGE` | `yes` | Static reply message content. |
 | `REPLY_DELAY` | `5` | Seconds to wait before replying. |
 
-### AI Chat (OpenRouter)
+### AI Chat (Gemini API)
 
 When the bot is mentioned and the message does not contain the static `REPLY_TRIGGER`, the AI chat handles the response if enabled.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AI_ENABLED` | `False` | Enable/disable dynamic AI chat via OpenRouter. |
-| `OPENROUTER_API_KEY` | *(empty)* | Your OpenRouter API Key. |
-| `AI_MODEL` | `google/gemini-3.1-flash-lite` | The LLM model to query on OpenRouter. |
+| `AI_ENABLED` | `False` | Enable/disable dynamic AI chat via Gemini API. |
+| `GEMINI_API_KEY` | *(empty)* | Your Gemini API Key. |
+| `AI_MODEL` | `gemini-2.5-flash` | The Gemini model to query on the Gemini API. |
 | `AI_SYSTEM_PROMPT` | *(see below)* | Instruction prompt given to the AI. |
 | `AI_MAX_TOKENS` | `500` | Maximum response token limit. |
 | `AI_ALLOWED_USER_IDS`| *(empty)* | Comma-separated list of allowed user IDs (empty = everyone allowed). |
@@ -124,7 +124,7 @@ When the bot is mentioned and the message does not contain the static `REPLY_TRI
 ├── bot.py             # Main AlwaysVoiceBot manager (handles Discord Gateway & WS connections)
 ├── config.py          # Configuration parser & loader for environment variables
 ├── presence.py        # Rich Presence activity builder
-├── api.py             # API handler for auto-replies, OpenRouter AI, & Discord Embed parsers
+├── api.py             # API handler for auto-replies, Gemini API, & Discord Embed parsers
 ├── utils.py           # Logging and simple utility helpers
 ├── requirements.txt   # Python package dependencies
 ├── Makefile           # Task runner for Docker workflows
@@ -156,7 +156,7 @@ When the bot is mentioned and the message does not contain the static `REPLY_TRI
 │  │  │                            │  │
 │  │  └─ Reply Threads (on demand) │  │
 │  │     ├─ Static Reply (POST)    │  │
-│  │     └─ AI Reply (OpenRouter)  │  │
+│  │     └─ AI Reply (Gemini API)  │  │
 │  └───────────────────────────────┘  │
 │            │                        │
 │            ▼                        │
