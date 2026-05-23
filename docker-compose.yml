@@ -26,3 +26,9 @@ services:
       - RICH_PRESENCE_BUTTON2_LABEL=${RICH_PRESENCE_BUTTON2_LABEL:-}
       - RICH_PRESENCE_BUTTON2_URL=${RICH_PRESENCE_BUTTON2_URL:-}
       - RICH_PRESENCE_UPDATE_INTERVAL=${RICH_PRESENCE_UPDATE_INTERVAL:-300}
+      - AI_ENABLED=${AI_ENABLED:-False}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - AI_MODEL=${AI_MODEL:-google/gemini-2.5-flash}
+      - AI_SYSTEM_PROMPT=${AI_SYSTEM_PROMPT:-You are an AI assistant in a Discord server. Answer clearly, concisely, and straight to the point. Keep your tone casual and natural like a normal chat, but stay informative and accurate. Always respond in the same language the user uses. Avoid being overly formal and don't over-explain unless asked.}
+      - AI_MAX_TOKENS=${AI_MAX_TOKENS:-500}
+      - AI_ALLOWED_USER_IDS=${AI_ALLOWED_USER_IDS:-}

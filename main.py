@@ -8,6 +8,7 @@ This relies on Docker's `restart: unless-stopped` policy to handle clean recover
 """
 
 import os
+import re
 import sys
 import json
 import time
@@ -28,6 +29,14 @@ REPLY_TRIGGER = os.getenv("REPLY_TRIGGER", "hey wake up!").lower()
 REPLY_MESSAGE = os.getenv("REPLY_MESSAGE", "yes")
 REPLY_DELAY = int(os.getenv("REPLY_DELAY", "5"))
 VOICE_LIMIT = int(os.getenv("VOICE_LIMIT", "0"))
+
+# AI Chat configuration (OpenRouter)
+AI_ENABLED = os.getenv("AI_ENABLED", "False").lower() == "true"
+AI_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+AI_MODEL = os.getenv("AI_MODEL", "google/gemini-2.5-flash")
+AI_SYSTEM_PROMPT = os.getenv("AI_SYSTEM_PROMPT", "You are a helpful assistant. Respond concisely in the same language as the user.")
+AI_MAX_TOKENS = int(os.getenv("AI_MAX_TOKENS", "500"))
+AI_ALLOWED_USER_IDS = [uid.strip() for uid in os.getenv("AI_ALLOWED_USER_IDS", "").split(",") if uid.strip()]
 
 # Rich Presence configuration
 RICH_PRESENCE_ENABLED = os.getenv("RICH_PRESENCE_ENABLED", "True").lower() == "true"
@@ -321,13 +330,22 @@ class AlwaysVoiceBot:
                             self.voice_users.remove(user_id_str)
                     self.check_voice_limit()
 
-                elif t == 'MESSAGE_CREATE' and AUTO_REPLY:
-                    if str(d.get('author', {}).get('id')) != self.user_id:
-                        content = d.get('content', '').lower()
-                        mentions = [m.get('id') for m in d.get('mentions', [])]
-                        
-                        if self.user_id in mentions and REPLY_TRIGGER in content:
-                            self.send_reply(d.get('channel_id'))
+                elif t == 'MESSAGE_CREATE':
+                    author_id = str(d.get('author', {}).get('id'))
+                    raw_content = d.get('content', '')
+                    channel_id = d.get('channel_id')
+                    mentions = [m.get('id') for m in d.get('mentions', [])]
+
+                    if author_id != self.user_id and self.user_id in mentions:
+                        content = raw_content.lower()
+
+                        if AUTO_REPLY and REPLY_TRIGGER in content:
+                            self.send_reply(channel_id)
+                        elif AI_ENABLED:
+                            if AI_ALLOWED_USER_IDS and author_id not in AI_ALLOWED_USER_IDS:
+                                self.log("WARN", f"AI request denied for user {author_id}")
+                            else:
+                                self.send_ai_reply(channel_id, raw_content, d)
 
             except Exception as e:
                 self.log("ERROR", f"Message receiver encountered a fatal error: {e}. Crashing...")
@@ -349,6 +367,121 @@ class AlwaysVoiceBot:
                 self.log("SUCCESS", f"Sent auto-reply to channel {channel_id}")
             except Exception:
                 self.log("ERROR", "HTTP request for auto-reply failed.")
+
+        Thread(target=callback, daemon=True).start()
+
+    def ask_ai(self, prompt, referenced_context=None):
+        """Sends a prompt to the OpenRouter API and returns the AI-generated response.
+        
+        If referenced_context is provided, it is included as additional context
+        so the AI understands the message being replied to.
+        """
+        try:
+            messages = [{"role": "system", "content": AI_SYSTEM_PROMPT}]
+
+            if referenced_context:
+                messages.append({
+                    "role": "system",
+                    "content": f"The user is replying to the following message for context:\n"
+                               f"Author: {referenced_context['author']}\n"
+                               f"Content: {referenced_context['content']}"
+                })
+
+            messages.append({"role": "user", "content": prompt})
+
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {AI_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": AI_MODEL,
+                    "messages": messages,
+                    "max_tokens": AI_MAX_TOKENS,
+                },
+                timeout=30,
+            )
+            data = response.json()
+            return data.get("choices", [{}])[0].get("message", {}).get("content", "Sorry, I couldn't generate a response.")
+        except Exception as e:
+            self.log("ERROR", f"OpenRouter AI request failed: {e}")
+            return None
+
+    def send_ai_reply(self, channel_id, raw_content, message_data):
+        """
+        Strips the bot mention from the message, queries the OpenRouter AI,
+        and sends the response as a reply to the original message in a background thread.
+
+        If the user's message is a reply to another message (referenced_message),
+        the replied message content/embed is included as context for the AI.
+        """
+        def callback():
+            # Remove <@USER_ID> or <@!USER_ID> mention from the message
+            clean_content = re.sub(r'<@!?' + str(self.user_id) + r'>', '', raw_content).strip()
+
+            if not clean_content:
+                return
+
+            # Extract referenced (replied-to) message context if available (text only)
+            referenced_context = None
+            ref_msg = None
+
+            if message_data and message_data.get('message_reference'):
+                ref_channel_id = message_data['message_reference'].get('channel_id', channel_id)
+                ref_message_id = message_data['message_reference'].get('message_id')
+                if ref_message_id:
+                    try:
+                        resp = requests.get(
+                            f"https://discord.com/api/v10/channels/{ref_channel_id}/messages/{ref_message_id}",
+                            headers=self.headers,
+                            timeout=10,
+                        )
+                        if resp.status_code == 200:
+                            ref_msg = resp.json()
+                            self.log("INFO", f"Fetched referenced message via API: {ref_message_id}")
+                    except Exception:
+                        pass
+
+            if not ref_msg and message_data:
+                ref_msg = message_data.get('referenced_message')
+
+            if ref_msg:
+                ref_author = ref_msg.get('author', {})
+                ref_author_name = ref_author.get('global_name') or ref_author.get('username', 'Unknown')
+                ref_content = ref_msg.get('content', '').strip()
+
+                if ref_content:
+                    referenced_context = {
+                        'author': ref_author_name,
+                        'content': ref_content,
+                    }
+                    self.log("INFO", f"AI query includes replied message from {ref_author_name}: {ref_content[:80]}")
+
+            self.log("INFO", f"AI query from channel {channel_id}: {clean_content[:100]}")
+
+            ai_response = self.ask_ai(clean_content, referenced_context=referenced_context)
+            if not ai_response:
+                return
+
+            # Discord message limit is 2000 characters
+            if len(ai_response) > 2000:
+                ai_response = ai_response[:1997] + "..."
+
+            try:
+                message_id = message_data.get('id') if message_data else None
+                payload = {"content": ai_response}
+                if message_id:
+                    payload["message_reference"] = {"message_id": message_id}
+                requests.post(
+                    f"https://discord.com/api/v10/channels/{channel_id}/messages",
+                    headers=self.headers,
+                    json=payload,
+                    timeout=10,
+                )
+                self.log("SUCCESS", f"Sent AI reply to channel {channel_id}")
+            except Exception:
+                self.log("ERROR", "HTTP request for AI reply failed.")
 
         Thread(target=callback, daemon=True).start()
 
