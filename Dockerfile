@@ -7,7 +7,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
-COPY main.py .
+COPY *.py .
 
 # Set environment to unbuffered for real-time logs
 ENV PYTHONUNBUFFERED=1
