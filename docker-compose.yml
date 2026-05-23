@@ -3,6 +3,8 @@ services:
     build: .
     container_name: always-voice-bot
     restart: unless-stopped
+    volumes:
+      - .:/app
     environment:
       - TZ=Asia/Jakarta
       - TOKEN=${TOKEN:-}

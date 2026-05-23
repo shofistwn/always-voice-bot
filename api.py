@@ -70,6 +70,28 @@ def ask_ai(prompt, referenced_context=None):
         log("ERROR", f"OpenRouter AI request failed: {e}")
         return None
 
+def extract_embed_text(embed):
+    """
+    Extracts core text fields from a Discord embed structure and converts them
+    to a readable, plain-text format for the AI context.
+    """
+    parts = []
+    if 'author' in embed and isinstance(embed['author'], dict) and 'name' in embed['author']:
+        parts.append(f"Embed Author: {embed['author']['name']}")
+    if 'title' in embed:
+        parts.append(f"Embed Title: {embed['title']}")
+    if 'description' in embed:
+        parts.append(f"Embed Description: {embed['description']}")
+    if 'fields' in embed:
+        for field in embed['fields']:
+            name = field.get('name', '')
+            value = field.get('value', '')
+            if name or value:
+                parts.append(f"- {name}: {value}")
+    if 'footer' in embed and isinstance(embed['footer'], dict) and 'text' in embed['footer']:
+        parts.append(f"Embed Footer: {embed['footer']['text']}")
+    return "\n".join(parts)
+
 def send_ai_reply_async(channel_id, raw_content, message_data, bot_user_id, headers):
     """
     Strips the bot mention from the message, queries the OpenRouter AI,
@@ -82,7 +104,7 @@ def send_ai_reply_async(channel_id, raw_content, message_data, bot_user_id, head
         if not clean_content:
             return
 
-        # Extract referenced (replied-to) message context if available (text only)
+        # Extract referenced (replied-to) message context if available (text and embeds)
         referenced_context = None
         ref_msg = None
 
@@ -91,31 +113,66 @@ def send_ai_reply_async(channel_id, raw_content, message_data, bot_user_id, head
             ref_message_id = message_data['message_reference'].get('message_id')
             if ref_message_id:
                 try:
+                    # For self-bots (User Accounts): Fetch referenced message via the channel history endpoint.
+                    # Direct message fetching (GET /messages/{id}) is restricted to official bots only.
                     resp = requests.get(
-                        f"https://discord.com/api/v10/channels/{ref_channel_id}/messages/{ref_message_id}",
+                        f"https://discord.com/api/v10/channels/{ref_channel_id}/messages?around={ref_message_id}&limit=1",
                         headers=headers,
                         timeout=10,
                     )
                     if resp.status_code == 200:
-                        ref_msg = resp.json()
-                        log("INFO", f"Fetched referenced message via API: {ref_message_id}")
-                except Exception:
-                    pass
+                        messages_list = resp.json()
+                        if isinstance(messages_list, list) and len(messages_list) > 0:
+                            for m in messages_list:
+                                if str(m.get('id')) == str(ref_message_id):
+                                    ref_msg = m
+                                    log("INFO", f"Fetched referenced message via history API: {ref_message_id}")
+                                    break
+                    else:
+                        log("WARN", f"Failed to fetch referenced message via history API. Status: {resp.status_code}, Response: {resp.text[:200]}")
+                except Exception as e:
+                    log("ERROR", f"Exception fetching referenced message via history API: {e}")
 
         if not ref_msg and message_data:
             ref_msg = message_data.get('referenced_message')
+            if ref_msg:
+                log("INFO", "Using referenced_message from gateway payload")
+            else:
+                log("INFO", "No referenced_message found in gateway payload")
 
         if ref_msg:
             ref_author = ref_msg.get('author', {})
             ref_author_name = ref_author.get('global_name') or ref_author.get('username', 'Unknown')
+            
+            # Extract content and any embeds
             ref_content = ref_msg.get('content', '').strip()
-
+            embeds = ref_msg.get('embeds', [])
+            log("INFO", f"Referenced message: content_length={len(ref_content)}, embeds_count={len(embeds)}")
+            
+            embed_texts = []
+            for i, embed in enumerate(embeds):
+                embed_text = extract_embed_text(embed)
+                log("INFO", f"Parsed embed {i}: {embed_text[:100]}...")
+                if embed_text:
+                    embed_texts.append(embed_text)
+            
+            # Combine content and embeds
+            combined_content_parts = []
             if ref_content:
+                combined_content_parts.append(ref_content)
+            if embed_texts:
+                combined_content_parts.append("[Embed Contents]:\n" + "\n---\n".join(embed_texts))
+                
+            combined_content = "\n\n".join(combined_content_parts).strip()
+
+            if combined_content:
                 referenced_context = {
                     'author': ref_author_name,
-                    'content': ref_content,
+                    'content': combined_content,
                 }
-                log("INFO", f"AI query includes replied message from {ref_author_name}: {ref_content[:80]}")
+                log("INFO", f"AI query includes replied message from {ref_author_name}: {combined_content[:80]}")
+            else:
+                log("WARN", "Referenced message has no text content and no parsable embeds.")
 
         log("INFO", f"AI query from channel {channel_id}: {clean_content[:100]}")
 
