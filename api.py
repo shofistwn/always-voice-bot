@@ -2,6 +2,9 @@ import re
 import time
 import requests
 from threading import Thread
+from google import genai
+from google.genai import types
+from google.genai.errors import APIError
 
 from config import (
     REPLY_DELAY,
@@ -55,50 +58,51 @@ def ask_ai(prompt, referenced_context=None):
                 f"Content: {referenced_context['content']}"
             )
 
-        payload = {
-            "systemInstruction": {
-                "parts": [{"text": "\n\n".join(system_instructions)}]
-            },
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [{"text": prompt}]
-                }
+        system_instruction_text = "\n\n".join(system_instructions)
+        config = types.GenerateContentConfig(
+            system_instruction=[
+                types.Part.from_text(text=system_instruction_text)
             ],
-            "generationConfig": {
-                "maxOutputTokens": AI_MAX_TOKENS,
-            },
-            "tools": [
-                {"google_search": {}}
+            max_output_tokens=AI_MAX_TOKENS,
+            tools=[
+                types.Tool(googleSearch=types.GoogleSearch())
             ]
-        }
+        )
+
+        contents = [
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part.from_text(text=prompt)
+                ]
+            )
+        ]
 
         for attempt in range(len(AI_API_KEYS)):
             current_key = AI_API_KEYS[current_api_key_index]
-            response = requests.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/{AI_MODEL}:generateContent?key={current_key}",
-                headers={"Content-Type": "application/json"},
-                json=payload,
-                timeout=30,
-            )
+            client = genai.Client(api_key=current_key)
             
-            if response.status_code == 429 or response.status_code == 403 or (response.status_code == 400 and "quota" in response.text.lower()):
-                log("WARN", f"API key index {current_api_key_index} hit limit/error ({response.status_code}). Rotating...")
-                current_api_key_index = (current_api_key_index + 1) % len(AI_API_KEYS)
-                continue
-            elif response.status_code != 200:
-                log("ERROR", f"Gemini API request failed with status {response.status_code}: {response.text}")
-                return "Sorry, I couldn't generate a response."
-
-            data = response.json()
             try:
-                result = data["candidates"][0]["content"]["parts"][0]["text"]
+                response = client.models.generate_content(
+                    model=AI_MODEL,
+                    contents=contents,
+                    config=config
+                )
+                
                 # Rotate key for the next request (Round Robin)
                 current_api_key_index = (current_api_key_index + 1) % len(AI_API_KEYS)
-                return result
-            except (KeyError, IndexError):
-                log("ERROR", f"Unexpected Gemini API response: {data}")
-                return "Sorry, I couldn't generate a response."
+                return response.text
+                
+            except APIError as e:
+                # e.code contains the HTTP status code
+                # We also check the error message for "quota"
+                if e.code == 429 or e.code == 403 or (e.code == 400 and "quota" in str(e).lower()):
+                    log("WARN", f"API key index {current_api_key_index} hit limit/error ({e.code}). Rotating...")
+                    current_api_key_index = (current_api_key_index + 1) % len(AI_API_KEYS)
+                    continue
+                else:
+                    log("ERROR", f"Gemini API request failed with status {e.code}: {e.message}")
+                    return "Sorry, I couldn't generate a response."
 
         log("ERROR", "All Gemini API keys failed or hit limits.")
         return "Sorry, all API keys have hit their limits. Please try again later."
