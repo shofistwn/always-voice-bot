@@ -60,20 +60,19 @@ def ask_ai(prompt, referenced_context=None):
 
         system_instruction_text = "\n\n".join(system_instructions)
         config = types.GenerateContentConfig(
-            system_instruction=[
-                types.Part.from_text(text=system_instruction_text)
-            ],
             max_output_tokens=AI_MAX_TOKENS,
             tools=[
                 types.Tool(googleSearch=types.GoogleSearch())
             ]
         )
 
+        full_prompt = f"{system_instruction_text}\n\nUser Message:\n{prompt}"
+
         contents = [
             types.Content(
                 role="user",
                 parts=[
-                    types.Part.from_text(text=prompt)
+                    types.Part.from_text(text=full_prompt)
                 ]
             )
         ]
