@@ -94,8 +94,8 @@ def ask_ai(prompt, referenced_context=None):
                 
             except APIError as e:
                 # e.code contains the HTTP status code
-                # We also check the error message for "quota"
-                if e.code in [429, 403, 503] or (e.code == 400 and "quota" in str(e).lower()):
+                # We also check the error message for "quota" or "location"
+                if e.code in [429, 403, 503] or (e.code == 400 and ("quota" in str(e).lower() or "location" in str(e).lower())):
                     log("WARN", f"API key index {current_api_key_index} hit limit/error ({e.code}). Rotating...")
                     current_api_key_index = (current_api_key_index + 1) % len(AI_API_KEYS)
                     continue
