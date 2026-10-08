@@ -526,7 +526,7 @@ export class MusicService {
         const title = formatTrackLink(t.info.title, t.info.uri);
         msg += `> \`${i + 1}.\` **${title}**\n> 👤 \`${t.info.author}\` • ⏱️ \`${formatDuration(t.info.length)}\`\n`;
       });
-      msg += `> -# Ketik angka 1–${candidates.length} untuk memutar lagu (batal otomatis dalam 15 detik).`;
+      msg += `> *Ketik angka 1–${candidates.length} untuk memutar lagu (batal otomatis dalam 15 detik).*`;
 
       const sentMessageId = await this.sendReply(channelId, msg);
 
@@ -576,8 +576,7 @@ export class MusicService {
       channelId,
       `> ### 🗑️ Lagu Dihapus dari Antrean\n` +
       `> **${trackTitle}**\n` +
-      `> 👤 \`${removed.info.author}\` • ⏱️ \`${durationStr}\` • Posisi \`#${idx}\`\n` +
-      `> -# Sisa antrean: ${this.queue.length} lagu`
+      `> 👤 \`${removed.info.author}\` • ⏱️ \`${durationStr}\` • Posisi \`#${idx}\``
     );
   }
 
@@ -598,8 +597,7 @@ export class MusicService {
       channelId,
       `> ### ↩️ Antrean Dibatalkan (Undo)\n` +
       `> **${trackTitle}**\n` +
-      `> 👤 \`${undone.info.author}\` • ⏱️ \`${durationStr}\`\n` +
-      `> -# Sisa antrean: ${this.queue.length} lagu`
+      `> 👤 \`${undone.info.author}\` • ⏱️ \`${durationStr}\``
     );
   }
 
@@ -656,8 +654,7 @@ export class MusicService {
             this.lastChannelId,
             `> ### 📻 Autoplay Rekomendasi\n` +
             `> **${trackTitle}**\n` +
-            `> 👤 \`${recommendation.info.author}\` • ⏱️ \`${durationStr}\`\n` +
-            `> -# 🔄 Diputar otomatis dari rekomendasi lagu terkait`
+            `> 👤 \`${recommendation.info.author}\` • ⏱️ \`${durationStr}\``
           );
         }
         await this.startPlayback(recommendation);
@@ -725,7 +722,7 @@ export class MusicService {
     const statusText = this.isAutoplay ? 'Diaktifkan' : 'Dinonaktifkan';
     const descText = this.isAutoplay
       ? 'Lagu rekomendasi serupa akan otomatis diputar saat antrean habis.'
-      : 'Pemutaran akan berhenti setelah seluruh antrean selesai.';
+      : 'Pemutaran akan berhenti setelah seluruh antrean lagu selesai.';
 
     await this.sendReply(
       channelId,
@@ -826,10 +823,7 @@ export class MusicService {
       if (this.queue.length > maxDisplay) {
         msg += `> *...dan ${this.queue.length - maxDisplay} lagu lainnya.*\n`;
       }
-      msg += '>\n';
     }
-
-    msg += `> -# Total antrean: ${this.queue.length} lagu • Autoplay: ${this.isAutoplay ? 'Aktif' : 'Nonaktif'}`;
 
     await this.sendReply(channelId, msg);
   }
@@ -847,8 +841,7 @@ export class MusicService {
     const text =
       `> ### ${statusHeader}\n` +
       `> **${trackTitle}**\n` +
-      `> 👤 \`${author}\` • ⏱️ \`${formatDuration(length)}\`\n` +
-      `> -# Status: ${this.isPaused ? 'Dijeda' : 'Memutar'} • Autoplay: ${this.isAutoplay ? 'Aktif' : 'Nonaktif'}`;
+      `> 👤 \`${author}\` • ⏱️ \`${formatDuration(length)}\``;
 
     await this.sendReply(channelId, text);
   }
@@ -887,9 +880,7 @@ export class MusicService {
       `> \`${p}nowplaying\` (alias: \`${p}np\`) — Detail info lagu saat ini\n` +
       `> \`${p}volume <0-100>\` (alias: \`${p}vol\`) — Atur tingkat volume suara\n` +
       `> \`${p}stop\` — Hentikan lagu dan bersihkan seluruh antrean\n` +
-      `> \`${p}help\` — Tampilkan daftar bantuan ini\n` +
-      `>\n` +
-      `> -# Pengguna harus berada di satu voice channel yang sama dengan bot untuk menjalankan pemutaran.`;
+      `> \`${p}help\` — Tampilkan daftar bantuan ini`;
 
     await this.sendReply(channelId, help);
   }
