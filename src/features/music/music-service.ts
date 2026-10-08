@@ -128,15 +128,35 @@ export class MusicService {
     if (!this.config.music.enabled || !botUserId) return;
     if (message.author.id === botUserId) return;
 
-    const raw = message.content?.trim();
-    if (!raw || !raw.startsWith(this.config.music.prefix)) return;
+    let raw = message.content?.trim() || '';
+    if (!raw) return;
 
-    const body = raw.slice(this.config.music.prefix.length).trim();
-    if (!body) return;
+    // Check if bot was mentioned
+    const isMentioned = message.mentions.some((m) => m.id === botUserId);
+    const mentionRegex = new RegExp(`^<@!?${botUserId}>\\s*`, 'i');
+    const hasMentionPrefix = mentionRegex.test(raw);
 
-    const [command, ...args] = body.split(/\s+/);
+    if (hasMentionPrefix) {
+      raw = raw.replace(mentionRegex, '').trim();
+    }
+
+    const prefix = this.config.music.prefix;
+    let isCommand = false;
+
+    if (raw.startsWith(prefix)) {
+      raw = raw.slice(prefix.length).trim();
+      isCommand = true;
+    } else if (isMentioned || hasMentionPrefix) {
+      isCommand = true;
+    }
+
+    if (!isCommand || !raw) return;
+
+    const [command, ...args] = raw.split(/\s+/);
     const cmd = command.toLowerCase();
     const query = args.join(' ');
+
+    logger.info(`Command received: "${cmd}" from ${message.author.username}`);
 
     switch (cmd) {
       case 'play':
@@ -200,9 +220,11 @@ export class MusicService {
       const isUrl = /^https?:\/\//i.test(query);
       const identifier = isUrl ? query : `search:${query}`;
 
+      logger.info(`Searching track via NodeLink: "${identifier}"...`);
       const result: NodeLinkLoadResult = await this.client.loadTracks(identifier);
 
       if (result.loadType === 'empty' || result.loadType === 'error') {
+        logger.warn(`Search returned no results (loadType: ${result.loadType})`);
         await this.sendReply(channelId, '❌ Lagu tidak ditemukan.');
         return;
       }
@@ -216,7 +238,7 @@ export class MusicService {
         }
 
         this.queue.push(...tracks);
-        await this.sendReply(channelId, `🎶 Menambahkan **${tracks.length} lagu** dari playlist **${playlist.info.name}** ke dalam antrean.`);
+        await this.sendReply(channelId, `🎶 Menambahkan **${tracks.length} lagu** dari playlist **${playlist.info.name}** ke antrean.`);
 
         if (!this.currentTrack) {
           this.playNext();
@@ -433,7 +455,7 @@ export class MusicService {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-      await fetch(`${DISCORD_GATEWAY.API_BASE_URL}/channels/${channelId}/messages`, {
+      const res = await fetch(`${DISCORD_GATEWAY.API_BASE_URL}/channels/${channelId}/messages`, {
         method: 'POST',
         headers: {
           Authorization: this.config.token,
@@ -445,6 +467,13 @@ export class MusicService {
       });
 
       clearTimeout(timeoutId);
+
+      const channelName = this.cache?.getChannelName(channelId) ?? channelId;
+      if (res.ok) {
+        logger.info(`Reply sent to ${channelName}`);
+      } else {
+        logger.warn(`Failed to send Discord message to ${channelName}: HTTP ${res.status} ${res.statusText}`);
+      }
     } catch (err) {
       logger.warn(`Failed to send music message: ${(err as Error).message}`);
     }

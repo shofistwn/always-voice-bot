@@ -22,6 +22,6 @@ export const DISCORD_GATEWAY = {
   API_BASE_URL: 'https://discord.com/api/v10',
   DEFAULT_USER_AGENT:
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  // Intents: GUILDS (1) | GUILD_VOICE_STATES (128) | GUILD_MESSAGES (512) = 641
-  INTENTS: 641,
+  // Intents: GUILDS (1) | GUILD_VOICE_STATES (128) | GUILD_MESSAGES (512) | MESSAGE_CONTENT (32768) = 33409
+  INTENTS: 33409,
 } as const;
