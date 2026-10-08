@@ -22,9 +22,8 @@ export class EntityCache {
 
     if (Array.isArray(data.users)) {
       for (const u of data.users) {
-        if (u.id) {
-          const name = u.global_name || u.username;
-          this.users.set(u.id, name);
+        if (u.id && u.username) {
+          this.users.set(u.id, u.username);
         }
       }
     }
@@ -41,23 +40,21 @@ export class EntityCache {
 
     if (Array.isArray(data.members)) {
       for (const m of data.members) {
-        if (m.user?.id) {
-          const name = m.nick || m.user.global_name || m.user.username;
-          this.users.set(m.user.id, name);
+        if (m.user?.id && m.user.username) {
+          this.users.set(m.user.id, m.user.username);
         }
       }
     }
   }
 
   public handleVoiceStateUpdate(data: VoiceState): void {
-    if (data.member?.user?.id) {
-      const name = data.member.nick || data.member.user.global_name || data.member.user.username;
-      this.users.set(data.member.user.id, name);
+    if (data.member?.user?.id && data.member.user.username) {
+      this.users.set(data.member.user.id, data.member.user.username);
     }
   }
 
   public handleMessageCreate(data: MessageCreateData): void {
-    if (data.author?.id) {
+    if (data.author?.id && data.author.username) {
       this.users.set(data.author.id, data.author.username);
     }
   }
