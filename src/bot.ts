@@ -1,10 +1,10 @@
 import type { BotConfig } from './types/config.js';
 import { GatewayClient } from './gateway/gateway-client.js';
 import { VoiceManager } from './voice/voice-manager.js';
+import { EntityCache } from './cache/entity-cache.js';
 import { AutoReplyService } from './features/auto-reply.js';
 import { StreamWatcherService } from './features/stream-watcher.js';
 import { MusicService } from './features/music/music-service.js';
-import { EntityCache } from './cache/entity-cache.js';
 import { createLogger } from './logger/index.js';
 
 const logger = createLogger('Bot');
@@ -12,14 +12,14 @@ const logger = createLogger('Bot');
 export class AlwaysVoiceBot {
   private readonly config: BotConfig;
   private readonly gateway: GatewayClient;
-  private readonly cache: EntityCache;
   private readonly voiceManager: VoiceManager;
+  private readonly cache: EntityCache;
   private readonly autoReply: AutoReplyService;
   private readonly streamWatcher: StreamWatcherService;
   private readonly musicService?: MusicService;
 
   private botUserId: string | null = null;
-  private botUsername: string = 'Unknown';
+  private botUsername: string | null = null;
 
   constructor(config: BotConfig) {
     this.config = config;
@@ -51,7 +51,7 @@ export class AlwaysVoiceBot {
 
     this.gateway.on('guildCreate', (data) => {
       this.cache.handleGuildCreate(data);
-      this.voiceManager.handleGuildCreate(data);
+      this.voiceManager.handleGuildCreate(data, this.botUserId);
       this.streamWatcher.handleGuildCreate(data, this.botUserId);
     });
 

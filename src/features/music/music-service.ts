@@ -63,6 +63,14 @@ export class MusicService {
     this.cache = cache;
     this.client = new NodeLinkClient(config.music);
 
+    if (this.config.music.allowedUserIds.length > 0) {
+      logger.info(
+        `Music commands restricted to ${this.config.music.allowedUserIds.length} user(s): [${this.config.music.allowedUserIds.join(', ')}]`
+      );
+    } else {
+      logger.info('Music commands open to all server members in the same voice channel.');
+    }
+
     this.registerNodeLinkEvents();
   }
 
@@ -135,6 +143,32 @@ export class MusicService {
       });
   }
 
+  private isUserAllowed(userId: string): boolean {
+    const allowed = this.config.music.allowedUserIds;
+    if (allowed.length === 0) return true;
+    return allowed.includes(userId);
+  }
+
+  private isUserInSameVoice(userId: string): boolean {
+    return this.voiceManager.isUserInSameVoice(userId);
+  }
+
+  private getVoiceWarningMessage(userId: string): string {
+    const botChannelId = this.voiceManager.getCurrentBotChannelId();
+    if (!botChannelId) {
+      return '⚠️ **Perhatian** — Bot sedang tidak berada di voice channel mana pun.';
+    }
+
+    const userChannelId = this.voiceManager.getUserVoiceChannelId(userId);
+    const botChannelName = this.cache?.getChannelName(botChannelId) ?? 'voice channel bot';
+
+    if (!userChannelId) {
+      return `⚠️ **Perhatian** — Anda harus bergabung ke voice channel bot (${botChannelName}) untuk menggunakan perintah musik.`;
+    }
+
+    return `⚠️ **Perhatian** — Anda harus berada di voice channel yang sama dengan bot (${botChannelName}) untuk menggunakan perintah musik.`;
+  }
+
   public async handleMessage(message: MessageCreateData, botUserId: string | null): Promise<void> {
     if (!this.config.music.enabled || !botUserId) return;
     if (message.author.id === botUserId) return;
@@ -156,6 +190,19 @@ export class MusicService {
 
       const num = parseInt(lower, 10);
       if (!Number.isNaN(num) && String(num) === lower) {
+        if (!this.isUserAllowed(message.author.id)) {
+          await this.sendReply(
+            message.channel_id,
+            '⛔ **Akses Ditolak** — Anda tidak memiliki izin untuk menggunakan perintah musik bot ini.'
+          );
+          return;
+        }
+
+        if (!this.isUserInSameVoice(message.author.id)) {
+          await this.sendReply(message.channel_id, this.getVoiceWarningMessage(message.author.id));
+          return;
+        }
+
         if (num >= 1 && num <= pendingSearch.tracks.length) {
           clearTimeout(pendingSearch.timeout);
           this.pendingSearches.delete(searchKey);
@@ -194,12 +241,44 @@ export class MusicService {
 
     if (!isCommand || !raw) return;
 
-    this.lastChannelId = message.channel_id;
-
     const [command, ...args] = raw.split(/\s+/);
     const cmd = command.toLowerCase();
     const query = args.join(' ');
 
+    const knownCommands = [
+      'play', 'p',
+      'search', 'find',
+      'remove', 'rm', 'del',
+      'undo',
+      'stop',
+      'skip', 's',
+      'pause',
+      'resume',
+      'queue', 'q',
+      'nowplaying', 'np',
+      'volume', 'vol',
+      'autoplay', 'ap',
+      'help',
+    ];
+
+    if (!knownCommands.includes(cmd)) return;
+
+    // 1. Verify user whitelist permissions
+    if (!this.isUserAllowed(message.author.id)) {
+      await this.sendReply(
+        message.channel_id,
+        '⛔ **Akses Ditolak** — Anda tidak memiliki izin untuk menggunakan perintah musik bot ini.'
+      );
+      return;
+    }
+
+    // 2. Verify user is in the same voice channel with the bot (except for help)
+    if (cmd !== 'help' && !this.isUserInSameVoice(message.author.id)) {
+      await this.sendReply(message.channel_id, this.getVoiceWarningMessage(message.author.id));
+      return;
+    }
+
+    this.lastChannelId = message.channel_id;
     logger.info(`Command received: "${cmd}" from ${message.author.username}`);
 
     switch (cmd) {
@@ -775,7 +854,8 @@ export class MusicService {
       `> \`${p}nowplaying\` (alias: \`${p}np\`) — Detail info lagu saat ini\n` +
       `> \`${p}volume <0-100>\` (alias: \`${p}vol\`) — Atur tingkat volume suara\n` +
       `> \`${p}stop\` — Hentikan lagu dan bersihkan seluruh antrean\n` +
-      `> \`${p}help\` — Tampilkan daftar bantuan ini`;
+      `> \`${p}help\` — Tampilkan daftar bantuan ini\n` +
+      `\n-# Pengguna harus berada di satu voice channel yang sama dengan bot untuk menjalankan pemutaran.`;
 
     await this.sendReply(channelId, help);
   }

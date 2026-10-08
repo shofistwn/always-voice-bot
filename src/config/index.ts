@@ -23,6 +23,14 @@ function parseStatus(val: string | undefined, defaultVal: OnlineStatus): OnlineS
   return defaultVal;
 }
 
+function parseStringList(val: string | undefined): string[] {
+  if (!val) return [];
+  return val
+    .split(/[,\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 export function loadConfig(): BotConfig {
   const token = process.env.TOKEN?.trim() || '';
   const guildId = process.env.GUILD_ID?.trim() || '';
@@ -58,6 +66,9 @@ export function loadConfig(): BotConfig {
     music: {
       enabled: parseBoolean(process.env.MUSIC_ENABLED, true),
       prefix: (process.env.MUSIC_PREFIX || '!').trim(),
+      allowedUserIds: parseStringList(
+        process.env.MUSIC_ALLOWED_USER_IDS || process.env.MUSIC_ALLOWED_USERS
+      ),
       nodelinkHost: process.env.NODELINK_HOST || 'localhost',
       nodelinkPort: parseNumber(process.env.NODELINK_PORT, 3000),
       nodelinkPassword: process.env.NODELINK_PASSWORD || 'youshallnotpass',

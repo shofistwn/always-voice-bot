@@ -17,3 +17,8 @@ Control music playback directly through Discord text chat using the configured p
 | `!nowplaying` | `!np` | View details and link of the current track. |
 | `!volume <0-100>` | `!vol` | Adjust playback volume. |
 | `!help` | | Display the list of music commands. |
+
+### 🔒 Access Control & Restrictions
+
+- **Same Voice Channel Requirement**: Users must be in the exact same voice channel as the bot to run playback commands (`play`, `search`, `skip`, `stop`, etc.).
+- **User Whitelist (`MUSIC_ALLOWED_USER_IDS`)**: Optional comma-separated Discord user IDs in `.env` (e.g. `MUSIC_ALLOWED_USER_IDS=123456789012345678,987654321098765432`). If defined, only authorized users can trigger music commands. If left blank, any user in the same voice channel can use the bot.

@@ -3,6 +3,7 @@ export type OnlineStatus = 'online' | 'idle' | 'dnd' | 'invisible';
 export interface MusicConfig {
   enabled: boolean;
   prefix: string;
+  allowedUserIds: string[];
   nodelinkHost: string;
   nodelinkPort: number;
   nodelinkPassword: string;
