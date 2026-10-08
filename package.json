@@ -1,0 +1,31 @@
+{
+  "name": "always-voice-bot",
+  "version": "1.0.0",
+  "description": "Discord self-bot designed to maintain a persistent voice channel presence with fail-fast recovery.",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "node node_modules/typescript/bin/tsc",
+    "start": "node dist/index.js",
+    "dev": "node node_modules/tsx/dist/cli.mjs src/index.ts",
+    "watch": "node node_modules/typescript/bin/tsc -w"
+  },
+  "keywords": [
+    "discord",
+    "voice-bot",
+    "self-bot",
+    "typescript"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.14",
+    "tsx": "^4.19.2",
+    "typescript": "5.6.3"
+  }
+}

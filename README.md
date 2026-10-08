@@ -1,185 +1,138 @@
 # 🎙️ AlwaysVoiceBot
 
-A Discord self-bot designed to maintain a persistent presence in a specific voice channel. Built with a **fail-fast** architecture — any connection drop or unhandled exception will terminate the process, relying on Docker's `restart: unless-stopped` policy for automatic recovery.
+A lightweight, modular Discord self-bot written in **TypeScript** designed to maintain a persistent presence in a specific voice channel. Built with a **fail-fast** architecture — any connection drop, invalid session, or unhandled exception will terminate the process, relying on Docker's `restart: unless-stopped` policy (or a process manager) for automatic recovery.
 
-Additionally, this bot features a smart **AI-Powered Chat** using the Gemini API to intelligently answer mentions, with robust context awareness (handling replied-to message texts and complex embedded structures), as well as a customizable **Rich Presence** to showcase activities and services.
+## ✨ Features
 
-## Features
+- **Auto-Join Voice Channel** — Automatically connects and stays inside a configured voice channel.
+- **Auto-Rejoin** — Reconnects automatically if disconnected from voice (with a 5-second backoff).
+- **Voice Limit** — Monitors channel occupancy; leaves if user count exceeds `VOICE_LIMIT`, and rejoins once it is safe.
+- **Auto-Reply (Static)** — Replies with a predefined message when mentioned with a trigger phrase.
+- **Session Resume** — Automatically attempts to resume existing Discord Gateway sessions on reconnection.
+- **Modular TypeScript Architecture** — Completely decoupled modules for Gateway, Voice, Auto-Reply, and Configuration.
+- **Structured Scoped Logging** — Colorized, padded, scoped log output with configurable log filtering.
 
-- **Auto-Join Voice Channel** — Automatically joins and stays in a configured voice channel.
-- **Auto-Rejoin** — Reconnects if disconnected (with a 5-second delay).
-- **Voice Limit** — Leaves the channel if user count exceeds a configurable limit, and automatically rejoins once it is safe.
-- **Auto-Reply** — Responds with a predefined static message when mentioned with a trigger phrase.
-- **AI Chat (Gemini API)** — Dynamically responds to mentions using state-of-the-art Gemini models when not matching the static auto-reply trigger.
-- **Context-Aware Replies** — Understands referenced/replied-to messages, extracting both plain text and detailed fields from Discord Embeds to provide high-quality AI responses.
-- **Rich Presence** — Displays custom activity status (e.g. promoting your service, custom details, state, and up to 2 clickable buttons with a continuous uptime timer).
-- **Session Resume** — Attempts to resume existing sessions on gateway reconnection instead of creating new ones.
-
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- Docker & Docker Compose
+- [Docker & Docker Compose](https://www.docker.com/) (recommended) OR [Node.js](https://nodejs.org/) v20+
 - A Discord user token
 
-### Setup
+### Setup with Docker (Recommended)
 
 1. Clone the repository:
-
    ```bash
    git clone https://github.com/shofistwn/always-voice-bot.git
    cd always-voice-bot
    ```
 
-2. Copy and configure environment variables:
-
+2. Configure environment variables:
    ```bash
    cp .env.example .env
    ```
+   Edit `.env` with your Discord token, guild ID, and voice channel ID.
 
-3. Edit `.env` with your configuration (see [Configuration](#configuration)).
-
-4. Start the bot:
-
+3. Start the bot:
    ```bash
    make up
    ```
 
-### Makefile Commands
+### Setup Locally
 
-| Command | Description |
-|---------|-------------|
-| `make build` | Build Docker image |
-| `make up` | Start the bot in background |
-| `make down` | Stop the bot |
-| `make restart` | Restart the bot |
-| `make logs` | Show bot logs (live) |
-| `make clean` | Remove containers, images, and volumes |
-| `make status` | Show container status |
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-## Configuration
+2. Build TypeScript:
+   ```bash
+   npm run build
+   ```
 
-All configuration is done via environment variables in the `.env` file:
+3. Start the bot:
+   ```bash
+   npm start
+   ```
+   *(Or run in development mode with `npm run dev`)*
+
+## ⚙️ Configuration
+
+All configuration is handled via environment variables in the `.env` file:
 
 ### Core Settings
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+|---|---|---|
 | `TOKEN` | *(required)* | Your Discord user token. |
 | `GUILD_ID` | *(required)* | Target server (guild) ID. |
 | `CHANNEL_ID` | *(required)* | Target voice channel ID. |
 | `STATUS` | `dnd` | Online status (`online`, `idle`, `dnd`, `invisible`). |
-| `SELF_MUTE` | `True` | Mute yourself in voice channel. |
-| `SELF_DEAF` | `False` | Deafen yourself in voice channel. |
+| `SELF_MUTE` | `True` | Mute yourself in the voice channel. |
+| `SELF_DEAF` | `False` | Deafen yourself in the voice channel. |
+| `LOG_LEVEL` | `info` | Minimum log level (`debug`, `info`, `warn`, `error`). |
 
 ### Voice Limit
 
 | Variable | Default | Description |
-|----------|---------|-------------|
+|---|---|---|
 | `VOICE_LIMIT` | `0` | Max users before leaving (0 = disabled). Leaves if count > limit, rejoins when count < limit. |
 
 ### Auto-Reply (Static)
 
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `AUTO_REPLY` | `True` | Enable/disable static auto-reply. |
-| `REPLY_TRIGGER` | `hey wake up!` | Trigger phrase (case-insensitive) to send the static message. |
+|---|---|---|
+| `AUTO_REPLY` | `False` | Enable/disable static auto-reply. |
+| `REPLY_TRIGGER` | `hey wake up!` | Trigger phrase (case-insensitive) to send the reply. |
 | `REPLY_MESSAGE` | `yes` | Static reply message content. |
 | `REPLY_DELAY` | `5` | Seconds to wait before replying. |
 
-### AI Chat (Gemini API)
-
-When the bot is mentioned and the message does not contain the static `REPLY_TRIGGER`, the AI chat handles the response if enabled.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AI_ENABLED` | `False` | Enable/disable dynamic AI chat via Gemini API. |
-| `GEMINI_API_KEYS` | *(empty)* | Your Gemini API Keys (comma-separated). |
-| `AI_MODEL` | `gemini-2.5-flash` | The Gemini model to query on the Gemini API. |
-| `AI_SYSTEM_PROMPT` | *(see below)* | Instruction prompt given to the AI. |
-| `AI_MAX_TOKENS` | `500` | Maximum response token limit. |
-| `AI_ALLOWED_USER_IDS`| *(empty)* | Comma-separated list of allowed user IDs (empty = everyone allowed). |
-
-*Note: Default `AI_SYSTEM_PROMPT` asks the bot to be casual, natural, and straight to the point while answering in the user's language.*
-
-### Rich Presence
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `RICH_PRESENCE_ENABLED` | `True` | Enable/disable Rich Presence. |
-| `RICH_PRESENCE_APP_ID` | *(empty)* | Discord Application ID (required for full RPC features/buttons). |
-| `RICH_PRESENCE_NAME` | `Rich Presence` | Activity / Game name. |
-| `RICH_PRESENCE_DETAILS` | *(empty)* | Upper description line. |
-| `RICH_PRESENCE_STATE` | *(empty)* | Lower description line. |
-| `RICH_PRESENCE_BUTTON1_LABEL` | *(empty)* | First clickable button label. |
-| `RICH_PRESENCE_BUTTON1_URL` | *(empty)* | First clickable button redirect URL. |
-| `RICH_PRESENCE_BUTTON2_LABEL` | *(empty)* | Second clickable button label. |
-| `RICH_PRESENCE_BUTTON2_URL` | *(empty)* | Second clickable button redirect URL. |
-| `RICH_PRESENCE_UPDATE_INTERVAL`| `500` | Presence refresh interval in seconds. |
-
-## Project Structure & Architecture
+## 🏗️ Project Architecture
 
 ```
-├── main.py            # Entry point of the application
-├── bot.py             # Main AlwaysVoiceBot manager (handles Discord Gateway & WS connections)
-├── config.py          # Configuration parser & loader for environment variables
-├── presence.py        # Rich Presence activity builder
-├── api.py             # API handler for auto-replies, Gemini API, & Discord Embed parsers
-├── utils.py           # Logging and simple utility helpers
-├── requirements.txt   # Python package dependencies
-├── Makefile           # Task runner for Docker workflows
-├── Dockerfile         # Container image manifest
-└── docker-compose.yml # Service container orchestration
-```
-
-### Gateway Architecture
-
-```
-┌─────────────────────────────────────┐
-│  Docker Container                   │
-│  restart: unless-stopped            │
-│                                     │
-│  ┌───────────────────────────────┐  │
-│  │  main.py (AlwaysVoiceBot)     │  │
-│  │                               │  │
-│  │  ├─ Main Thread               │  │
-│  │  │  └─ handle_messages()      │  │
-│  │  │     ├─ READY → join voice  │  │
-│  │  │     ├─ VOICE_STATE_UPDATE  │  │
-│  │  │     └─ MESSAGE_CREATE      │  │
-│  │  │                            │  │
-│  │  ├─ Heartbeat Thread          │  │
-│  │  │  └─ OP 1 every ~41.25s    │  │
-│  │  │                            │  │
-│  │  ├─ Presence Thread           │  │
-│  │  │  └─ OP 3 every 500s       │  │
-│  │  │                            │  │
-│  │  └─ Reply Threads (on demand) │  │
-│  │     ├─ Static Reply (POST)    │  │
-│  │     └─ AI Reply (Gemini API)  │  │
-│  └───────────────────────────────┘  │
-│            │                        │
-│            ▼                        │
-│  Discord Gateway (WSS v10)          │
-└─────────────────────────────────────┘
+always-voice-bot/
+├── src/
+│   ├── index.ts                # Application entry point & process signal handling
+│   ├── bot.ts                  # Bot orchestrator connecting modules
+│   ├── config/
+│   │   └── index.ts            # Environment loader & typed config parser
+│   ├── constants/
+│   │   └── discord.ts          # Gateway opcodes, URLs, and intents
+│   ├── gateway/
+│   │   ├── gateway-client.ts   # Discord Gateway WSS client (v10) & event emitter
+│   │   ├── heartbeat.ts        # Heartbeat manager (OP 1)
+│   │   └── session.ts          # Gateway session state (resume tokens & sequence)
+│   ├── voice/
+│   │   └── voice-manager.ts    # Voice channel join/leave & population limit tracking
+│   ├── features/
+│   │   └── auto-reply.ts       # Mention-based static auto-reply service
+│   ├── logger/
+│   │   └── index.ts            # Colorized timestamped scoped logger
+│   └── types/
+│       ├── config.ts           # Bot configuration interfaces
+│       └── discord.ts          # Discord Gateway and event payload types
+├── Dockerfile                  # Multi-stage container image (Node.js 22 Alpine)
+├── docker-compose.yml          # Docker Compose orchestration
+├── Makefile                    # Workflow command automation
+├── package.json                # Project dependencies & scripts
+└── tsconfig.json               # TypeScript compiler configuration
 ```
 
 ### Fail-Fast Strategy
 
-The bot utilizes **no internal retry loops** for WebSocket or session failures. Any fatal gateway error or unhandled exception immediately triggers `sys.exit(1)`. Docker then automatically restarts the container according to its restart policy. This ensures a lightweight codebase and highly predictable recovery behavior.
+The bot deliberately avoids complex nested retry loops. Fatal gateway states or unhandled network crashes trigger immediate process termination (`process.exit(1)`). When deployed in Docker, `restart: unless-stopped` provides instant, clean recovery.
 
 | Event | Action |
-|-------|--------|
-| OP 7 (Reconnect) | `sys.exit(1)` → Docker restart |
-| OP 9 (Invalid Session) | `sys.exit(1)` → Docker restart |
-| WebSocket closed | `sys.exit(1)` → Docker restart |
-| Connection failed | `sys.exit(1)` → Docker restart |
-| Voice disconnected | Auto-rejoin after a 5-second delay |
+|---|---|
+| OP 7 (Reconnect) | `process.exit(1)` → Docker restart |
+| OP 9 (Invalid Session) | `process.exit(1)` → Docker restart |
+| WebSocket closed unexpectedly | `process.exit(1)` → Docker restart |
+| Voice disconnected | Auto-rejoins after a 5-second delay |
 
 ## ⚠️ Disclaimer
 
-This is a **self-bot** that uses a Discord user token for automation. Automating user accounts violates [Discord's Terms of Service](https://discord.com/terms). Use at your own risk — your account may be suspended or banned.
+This is a **self-bot** that uses a Discord user account token for automation. Automating user accounts violates [Discord's Terms of Service](https://discord.com/terms). Use at your own risk.
 
-## License
+## 📄 License
 
 This project is for personal and educational use only.

@@ -1,15 +1,24 @@
-.PHONY: help build up down restart logs clean setup
+.PHONY: help build up down restart logs clean status install dev
 
 # Default target
 help:
 	@echo "Available commands:"
-	@echo "  make build    - Build Docker image"
-	@echo "  make up       - Start the bot in background"
-	@echo "  make down     - Stop the bot"
-	@echo "  make restart  - Restart the bot"
-	@echo "  make logs     - Show bot logs (live)"
+	@echo "  make install  - Install local npm dependencies"
+	@echo "  make dev      - Run bot in development mode (tsx)"
+	@echo "  make build    - Build Docker image (or compile TypeScript)"
+	@echo "  make up       - Start the bot container in background"
+	@echo "  make down     - Stop the bot container"
+	@echo "  make restart  - Restart the bot container"
+	@echo "  make logs     - Show bot container logs (live)"
 	@echo "  make clean    - Remove containers, images, and volumes"
 	@echo "  make status   - Show container status"
+
+# Local Development
+install:
+	npm install
+
+dev:
+	npm run dev
 
 # Build Docker image
 build:

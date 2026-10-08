@@ -3,8 +3,7 @@ services:
     build: .
     container_name: always-voice-bot
     restart: unless-stopped
-    volumes:
-      - .:/app
+    init: true
     environment:
       - TZ=Asia/Jakarta
       - TOKEN=${TOKEN:-}
@@ -14,26 +13,9 @@ services:
       - STATUS=${STATUS:-dnd}
       - SELF_MUTE=${SELF_MUTE:-True}
       - SELF_DEAF=${SELF_DEAF:-False}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
 
       - AUTO_REPLY=${AUTO_REPLY:-False}
       - REPLY_DELAY=${REPLY_DELAY:-5}
       - REPLY_TRIGGER=${REPLY_TRIGGER:-hey wake up!}
       - REPLY_MESSAGE=${REPLY_MESSAGE:-yes}
-
-      - RICH_PRESENCE_ENABLED=${RICH_PRESENCE_ENABLED:-False}
-      - RICH_PRESENCE_APP_ID=${RICH_PRESENCE_APP_ID:-}
-      - RICH_PRESENCE_NAME=${RICH_PRESENCE_NAME:-Rich Presence}
-      - RICH_PRESENCE_DETAILS=${RICH_PRESENCE_DETAILS:-}
-      - RICH_PRESENCE_STATE=${RICH_PRESENCE_STATE:-}
-      - RICH_PRESENCE_BUTTON1_LABEL=${RICH_PRESENCE_BUTTON1_LABEL:-}
-      - RICH_PRESENCE_BUTTON1_URL=${RICH_PRESENCE_BUTTON1_URL:-}
-      - RICH_PRESENCE_BUTTON2_LABEL=${RICH_PRESENCE_BUTTON2_LABEL:-}
-      - RICH_PRESENCE_BUTTON2_URL=${RICH_PRESENCE_BUTTON2_URL:-}
-      - RICH_PRESENCE_UPDATE_INTERVAL=${RICH_PRESENCE_UPDATE_INTERVAL:-300}
-
-      - AI_ENABLED=${AI_ENABLED:-False}
-      - GEMINI_API_KEYS=${GEMINI_API_KEYS:-}
-      - AI_MODEL=${AI_MODEL:-gemini-2.5-flash}
-      - AI_SYSTEM_PROMPT=${AI_SYSTEM_PROMPT:-You are an AI assistant in a Discord server. Answer clearly, concisely, and straight to the point. Keep your tone casual and natural like a normal chat, but stay informative and accurate. Always respond in the same language the user uses. Avoid being overly formal and don't over-explain unless asked.}
-      - AI_MAX_TOKENS=${AI_MAX_TOKENS:-500}
-      - AI_ALLOWED_USER_IDS=${AI_ALLOWED_USER_IDS:-}
