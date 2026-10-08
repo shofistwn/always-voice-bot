@@ -18,6 +18,12 @@ import { createLogger } from '../../logger/index.js';
 
 const logger = createLogger('Music');
 
+interface PendingSearch {
+  userId: string;
+  tracks: NodeLinkTrack[];
+  timeout: NodeJS.Timeout;
+}
+
 function formatDuration(ms: number): string {
   if (ms <= 0 || !Number.isFinite(ms)) return 'Live';
   const totalSeconds = Math.floor(ms / 1000);
@@ -49,6 +55,7 @@ export class MusicService {
   private isVoiceConnectedToNode: boolean = false;
   private lastChannelId: string | null = null;
   private readonly playedHistory: Set<string> = new Set();
+  private readonly pendingSearches: Map<string, PendingSearch> = new Map();
 
   constructor(config: BotConfig, voiceManager: VoiceManager, cache?: EntityCache) {
     this.config = config;
@@ -135,6 +142,37 @@ export class MusicService {
     let raw = message.content?.trim() || '';
     if (!raw) return;
 
+    // Check if this message resolves an active pending search from this user in this channel
+    const searchKey = `${message.channel_id}:${message.author.id}`;
+    const pendingSearch = this.pendingSearches.get(searchKey);
+    if (pendingSearch) {
+      const lower = raw.toLowerCase().trim();
+      if (lower === 'cancel' || lower === 'batal') {
+        clearTimeout(pendingSearch.timeout);
+        this.pendingSearches.delete(searchKey);
+        await this.sendReply(message.channel_id, '🚫 **Pencarian Dibatalkan** — Pemilihan lagu dibatalkan.');
+        return;
+      }
+
+      const num = parseInt(lower, 10);
+      if (!Number.isNaN(num) && String(num) === lower) {
+        if (num >= 1 && num <= pendingSearch.tracks.length) {
+          clearTimeout(pendingSearch.timeout);
+          this.pendingSearches.delete(searchKey);
+          const selectedTrack = pendingSearch.tracks[num - 1];
+          if (selectedTrack) {
+            await this.enqueueOrPlayTrack(message.channel_id, selectedTrack);
+          }
+        } else {
+          await this.sendReply(
+            message.channel_id,
+            `⚠️ **Pilihan Tidak Valid** — Masukkan angka antara 1 hingga ${pendingSearch.tracks.length}, atau ketik \`cancel\`.`
+          );
+        }
+        return;
+      }
+    }
+
     // Check if bot was mentioned
     const isMentioned = message.mentions.some((m) => m.id === botUserId);
     const mentionRegex = new RegExp(`^<@!?${botUserId}>\\s*`, 'i');
@@ -168,6 +206,21 @@ export class MusicService {
       case 'play':
       case 'p':
         await this.handlePlayCommand(message.channel_id, query);
+        break;
+
+      case 'search':
+      case 'find':
+        await this.handleSearchCommand(message.channel_id, message.author.id, query);
+        break;
+
+      case 'remove':
+      case 'rm':
+      case 'del':
+        await this.handleRemoveCommand(message.channel_id, query);
+        break;
+
+      case 'undo':
+        await this.handleUndoCommand(message.channel_id);
         break;
 
       case 'stop':
@@ -213,6 +266,26 @@ export class MusicService {
 
       default:
         break;
+    }
+  }
+
+  private async enqueueOrPlayTrack(channelId: string, track: NodeLinkTrack): Promise<void> {
+    const durationStr = formatDuration(track.info.length);
+    const linkStr = track.info.uri ? ` • [Tautan](<${track.info.uri}>)` : '';
+
+    if (!this.currentTrack) {
+      this.currentTrack = track;
+      await this.startPlayback(track);
+      await this.sendReply(
+        channelId,
+        `🎶 **Sedang Diputar**\n> **${track.info.title}**\n> *${track.info.author}* • \`${durationStr}\`${linkStr}`
+      );
+    } else {
+      this.queue.push(track);
+      await this.sendReply(
+        channelId,
+        `📥 **Ditambahkan ke Antrean** \`(#${this.queue.length})\`\n> **${track.info.title}**\n> *${track.info.author}* • \`${durationStr}\``
+      );
     }
   }
 
@@ -288,27 +361,143 @@ export class MusicService {
         return;
       }
 
-      const durationStr = formatDuration(trackToPlay.info.length);
-      const linkStr = trackToPlay.info.uri ? ` • [Tautan](<${trackToPlay.info.uri}>)` : '';
-
-      if (!this.currentTrack) {
-        this.currentTrack = trackToPlay;
-        await this.startPlayback(trackToPlay);
-        await this.sendReply(
-          channelId,
-          `🎶 **Sedang Diputar**\n> **${trackToPlay.info.title}**\n> *${trackToPlay.info.author}* • \`${durationStr}\`${linkStr}`
-        );
-      } else {
-        this.queue.push(trackToPlay);
-        await this.sendReply(
-          channelId,
-          `📥 **Ditambahkan ke Antrean** \`(#${this.queue.length})\`\n> **${trackToPlay.info.title}**\n> *${trackToPlay.info.author}* • \`${durationStr}\``
-        );
-      }
+      await this.enqueueOrPlayTrack(channelId, trackToPlay);
     } catch (err) {
       logger.error(`Error handling play command: ${(err as Error).message}`);
       await this.sendReply(channelId, `❌ **Gagal** — ${(err as Error).message}`);
     }
+  }
+
+  private async handleSearchCommand(
+    channelId: string,
+    authorId: string,
+    query: string
+  ): Promise<void> {
+    if (!query) {
+      await this.sendReply(
+        channelId,
+        `⚠️ **Perhatian** — Masukkan kata kunci pencarian lagu.\n> Contoh: \`${this.config.music.prefix}search suket teki didi\``
+      );
+      return;
+    }
+
+    if (!this.client.isConnected()) {
+      await this.sendReply(
+        channelId,
+        '⚠️ **Koneksi** — Server audio NodeLink belum siap, silakan coba beberapa saat lagi.'
+      );
+      return;
+    }
+
+    try {
+      const isUrl = /^https?:\/\//i.test(query);
+      const identifier = isUrl ? query : `search:${query}`;
+
+      logger.info(`Searching tracks interactively: "${identifier}"...`);
+      const result: NodeLinkLoadResult = await this.client.loadTracks(identifier);
+
+      if (result.loadType === 'empty' || result.loadType === 'error') {
+        logger.warn(`Interactive search returned no results (loadType: ${result.loadType})`);
+        await this.sendReply(channelId, '❌ **Tidak Ditemukan** — Lagu tidak ditemukan.');
+        return;
+      }
+
+      let tracks: NodeLinkTrack[] = [];
+
+      if (result.loadType === 'playlist') {
+        const playlist = result.data as NodeLinkPlaylistData;
+        tracks = playlist.tracks || [];
+      } else if (result.loadType === 'track') {
+        tracks = [result.data as NodeLinkTrack];
+      } else if (result.loadType === 'search') {
+        tracks = Array.isArray(result.data) ? (result.data as NodeLinkTrack[]) : [];
+      }
+
+      if (tracks.length === 0) {
+        await this.sendReply(channelId, '❌ **Tidak Ditemukan** — Lagu tidak ditemukan.');
+        return;
+      }
+
+      const candidates = tracks.slice(0, 5);
+      const searchKey = `${channelId}:${authorId}`;
+
+      const existing = this.pendingSearches.get(searchKey);
+      if (existing) {
+        clearTimeout(existing.timeout);
+        this.pendingSearches.delete(searchKey);
+      }
+
+      const timeout = setTimeout(() => {
+        if (this.pendingSearches.has(searchKey)) {
+          this.pendingSearches.delete(searchKey);
+        }
+      }, 30000);
+
+      this.pendingSearches.set(searchKey, {
+        userId: authorId,
+        tracks: candidates,
+        timeout,
+      });
+
+      let msg = `🔍 **Hasil Pencarian** — *Pilih nomor 1–${candidates.length}*\n`;
+      candidates.forEach((t, i) => {
+        msg += `> \`${i + 1}.\` **${t.info.title}**\n> *${t.info.author}* • \`${formatDuration(t.info.length)}\`\n`;
+      });
+      msg += `\n-# Ketik angka 1–${candidates.length} untuk memutar lagu, atau 'cancel' untuk membatalkan (30 detik).`;
+
+      await this.sendReply(channelId, msg);
+    } catch (err) {
+      logger.error(`Error handling search command: ${(err as Error).message}`);
+      await this.sendReply(channelId, `❌ **Gagal** — ${(err as Error).message}`);
+    }
+  }
+
+  private async handleRemoveCommand(channelId: string, query: string): Promise<void> {
+    if (this.queue.length === 0) {
+      await this.sendReply(channelId, '⚠️ **Antrean Kosong** — Belum ada lagu dalam antrean.');
+      return;
+    }
+
+    const idx = parseInt(query.trim(), 10);
+    if (Number.isNaN(idx) || idx < 1 || idx > this.queue.length) {
+      await this.sendReply(
+        channelId,
+        `⚠️ **Nomor Tidak Valid** — Masukkan nomor antrean antara 1 hingga ${this.queue.length}.\n> Contoh: \`${this.config.music.prefix}remove 1\``
+      );
+      return;
+    }
+
+    const removed = this.queue.splice(idx - 1, 1)[0]!;
+    const durationStr = formatDuration(removed.info.length);
+
+    await this.sendReply(
+      channelId,
+      `🗑️ **Lagu Dihapus dari Antrean** \`(#${idx})\`\n` +
+      `> **${removed.info.title}**\n` +
+      `> *${removed.info.author}* • \`${durationStr}\`\n` +
+      `-# Sisa antrean: ${this.queue.length} lagu`
+    );
+  }
+
+  private async handleUndoCommand(channelId: string): Promise<void> {
+    if (this.queue.length === 0) {
+      await this.sendReply(
+        channelId,
+        '⚠️ **Antrean Kosong** — Tidak ada lagu di antrean yang dapat dibatalkan.'
+      );
+      return;
+    }
+
+    const undone = this.queue.pop()!;
+    const durationStr = formatDuration(undone.info.length);
+
+    await this.sendReply(
+      channelId,
+      `↩️ **Antrean Dibatalkan (Undo)**\n` +
+      `> **${undone.info.title}**\n` +
+      `> *${undone.info.author}* • \`${durationStr}\`\n` +
+      `-# Sisa antrean: ${this.queue.length} lagu`
+    );
   }
 
   private async startPlayback(track: NodeLinkTrack): Promise<void> {
@@ -576,6 +765,9 @@ export class MusicService {
     const p = this.config.music.prefix;
     const help = `🎵 **Panduan Perintah Musik** (\`Prefix: ${p}\`)\n` +
       `> \`${p}play <judul/url>\` (alias: \`${p}p\`) — Putar lagu atau tambah ke antrean\n` +
+      `> \`${p}search <judul>\` (alias: \`${p}find\`) — Cari lagu secara interaktif (pilih 1–5)\n` +
+      `> \`${p}remove <nomor>\` (alias: \`${p}rm\`, \`${p}del\`) — Hapus lagu dari urutan antrean\n` +
+      `> \`${p}undo\` — Hapus lagu terakhir yang dimasukkan ke antrean\n` +
       `> \`${p}autoplay\` (alias: \`${p}ap\`) — Nyalakan/matikan pemutaran rekomendasi otomatis\n` +
       `> \`${p}skip\` (alias: \`${p}s\`) — Lewati lagu yang sedang diputar\n` +
       `> \`${p}pause\` / \`${p}resume\` — Jeda atau lanjutkan pemutaran lagu\n` +
@@ -618,6 +810,10 @@ export class MusicService {
   }
 
   public destroy(): void {
+    for (const pending of this.pendingSearches.values()) {
+      clearTimeout(pending.timeout);
+    }
+    this.pendingSearches.clear();
     this.client.destroy();
   }
 }
