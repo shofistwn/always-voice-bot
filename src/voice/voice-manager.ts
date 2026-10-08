@@ -1,5 +1,6 @@
 import type { BotConfig } from '../types/config.js';
 import type { GuildCreateData, VoiceState } from '../types/discord.js';
+import type { EntityCache } from '../cache/entity-cache.js';
 import { GATEWAY_OPCODES } from '../constants/discord.js';
 import { createLogger } from '../logger/index.js';
 
@@ -13,14 +14,16 @@ export interface VoiceGatewaySender {
 export class VoiceManager {
   private readonly config: BotConfig;
   private readonly sender: VoiceGatewaySender;
+  private readonly cache?: EntityCache;
   private isInVoice: boolean = false;
   private voiceUsers: Set<string> = new Set();
   private lastJoinAttempt: number = 0;
   private rejoinTimer: NodeJS.Timeout | null = null;
 
-  constructor(config: BotConfig, sender: VoiceGatewaySender) {
+  constructor(config: BotConfig, sender: VoiceGatewaySender, cache?: EntityCache) {
     this.config = config;
     this.sender = sender;
+    this.cache = cache;
   }
 
   public getInVoice(): boolean {
@@ -49,7 +52,9 @@ export class VoiceManager {
           self_mute: this.config.selfMute,
           self_deaf: this.config.selfDeaf,
         });
-        logger.info(`Joining channel ${this.config.channelId}...`);
+
+        const channelName = this.cache?.getChannelName(this.config.channelId) ?? this.config.channelId;
+        logger.info(`Joining ${channelName}...`);
         this.lastJoinAttempt = Date.now();
       } catch (error) {
         logger.error(`Failed to join voice: ${(error as Error).message}`);
@@ -67,7 +72,9 @@ export class VoiceManager {
           self_mute: false,
           self_deaf: false,
         });
-        logger.info('Left voice channel (limit reached).');
+
+        const channelName = this.cache?.getChannelName(this.config.channelId) ?? this.config.channelId;
+        logger.info(`Left ${channelName} (limit reached).`);
       } catch (error) {
         logger.error(`Failed to leave voice: ${(error as Error).message}`);
         this.isInVoice = true;
@@ -110,15 +117,17 @@ export class VoiceManager {
   }
 
   public handleVoiceStateUpdate(data: VoiceState, botUserId: string | null): void {
+    const channelName = this.cache?.getChannelName(this.config.channelId) ?? this.config.channelId;
+
     // Handle bot's own voice state
     if (botUserId && data.user_id === botUserId) {
       const wasInVoice = this.isInVoice;
       this.isInVoice = data.channel_id !== null;
 
       if (this.isInVoice && !wasInVoice) {
-        logger.success(`Connected to channel ${this.config.channelId}`);
+        logger.success(`Connected to ${channelName}`);
       } else if (wasInVoice && !this.isInVoice) {
-        logger.warn('Disconnected from voice channel. Rejoining in 5s...');
+        logger.warn(`Disconnected from ${channelName}. Rejoining in 5s...`);
         if (this.rejoinTimer) {
           clearTimeout(this.rejoinTimer);
         }

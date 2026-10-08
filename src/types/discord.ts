@@ -16,11 +16,18 @@ export interface User {
   global_name?: string | null;
 }
 
+export interface GuildMember {
+  user?: User;
+  nick?: string | null;
+}
+
 export interface ReadyEventData {
   v: number;
   user: User;
   session_id: string;
   resume_gateway_url: string;
+  guilds?: GuildCreateData[];
+  users?: User[];
 }
 
 export interface VoiceState {
@@ -34,10 +41,20 @@ export interface VoiceState {
   self_mute?: boolean;
   self_stream?: boolean;
   self_video?: boolean;
+  member?: GuildMember;
+}
+
+export interface GuildChannel {
+  id: string;
+  name: string;
+  type?: number;
 }
 
 export interface GuildCreateData {
   id: string;
+  name?: string;
+  channels?: GuildChannel[];
+  members?: GuildMember[];
   voice_states?: VoiceState[];
 }
 

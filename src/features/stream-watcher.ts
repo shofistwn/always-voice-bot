@@ -1,5 +1,6 @@
 import type { BotConfig } from '../types/config.js';
 import type { GuildCreateData, StreamCreateData, StreamDeleteData, VoiceState } from '../types/discord.js';
+import type { EntityCache } from '../cache/entity-cache.js';
 import { GATEWAY_OPCODES } from '../constants/discord.js';
 import { createLogger } from '../logger/index.js';
 
@@ -13,11 +14,13 @@ export interface StreamGatewaySender {
 export class StreamWatcherService {
   private readonly config: BotConfig;
   private readonly sender: StreamGatewaySender;
+  private readonly cache?: EntityCache;
   private readonly activeStreams: Set<string> = new Set();
 
-  constructor(config: BotConfig, sender: StreamGatewaySender) {
+  constructor(config: BotConfig, sender: StreamGatewaySender, cache?: EntityCache) {
     this.config = config;
     this.sender = sender;
+    this.cache = cache;
   }
 
   private extractStreamerId(streamKey: string): string {
@@ -110,7 +113,8 @@ export class StreamWatcherService {
       this.activeStreams.add(streamKey);
 
       const userId = streamerId ?? this.extractStreamerId(streamKey);
-      logger.success(`Watching stream from user ${userId}`);
+      const displayName = this.cache?.getUserName(userId) ?? `user ${userId}`;
+      logger.success(`Watching stream from ${displayName}`);
     } catch (error) {
       logger.warn(`Failed to send STREAM_WATCH: ${(error as Error).message}`);
     }
@@ -130,7 +134,8 @@ export class StreamWatcherService {
       this.activeStreams.delete(streamKey);
 
       const userId = this.extractStreamerId(streamKey);
-      logger.info(`Stream ended from user ${userId}`);
+      const displayName = this.cache?.getUserName(userId) ?? `user ${userId}`;
+      logger.info(`Stream ended from ${displayName}`);
     } catch (error) {
       logger.warn(`Failed to send STREAM_DELETE: ${(error as Error).message}`);
       this.activeStreams.delete(streamKey);

@@ -1,5 +1,6 @@
 import type { BotConfig } from '../types/config.js';
 import type { MessageCreateData } from '../types/discord.js';
+import type { EntityCache } from '../cache/entity-cache.js';
 import { DISCORD_GATEWAY } from '../constants/discord.js';
 import { createLogger } from '../logger/index.js';
 
@@ -7,10 +8,12 @@ const logger = createLogger('AutoReply');
 
 export class AutoReplyService {
   private readonly config: BotConfig;
+  private readonly cache?: EntityCache;
   private readonly activeTimers: Set<NodeJS.Timeout> = new Set();
 
-  constructor(config: BotConfig) {
+  constructor(config: BotConfig, cache?: EntityCache) {
     this.config = config;
+    this.cache = cache;
   }
 
   public handleMessage(message: MessageCreateData, botUserId: string | null): void {
@@ -65,8 +68,9 @@ export class AutoReplyService {
 
         clearTimeout(timeoutId);
 
+        const channelName = this.cache?.getChannelName(channelId) ?? channelId;
         if (response.ok) {
-          logger.success(`Reply sent to channel ${channelId}`);
+          logger.success(`Reply sent to ${channelName}`);
         } else {
           logger.warn(`Reply failed with HTTP status ${response.status}`);
         }
