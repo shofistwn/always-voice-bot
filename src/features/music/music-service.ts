@@ -20,6 +20,8 @@ const logger = createLogger('Music');
 
 interface PendingSearch {
   userId: string;
+  channelId: string;
+  messageId?: string | null;
   tracks: NodeLinkTrack[];
   timeout: NodeJS.Timeout;
 }
@@ -184,7 +186,9 @@ export class MusicService {
       if (lower === 'cancel' || lower === 'batal') {
         clearTimeout(pendingSearch.timeout);
         this.pendingSearches.delete(searchKey);
-        await this.sendReply(message.channel_id, '🚫 **Pencarian Dibatalkan** — Pemilihan lagu dibatalkan.');
+        if (pendingSearch.messageId) {
+          await this.deleteMessage(message.channel_id, pendingSearch.messageId);
+        }
         return;
       }
 
@@ -202,6 +206,9 @@ export class MusicService {
         if (num >= 1 && num <= pendingSearch.tracks.length) {
           clearTimeout(pendingSearch.timeout);
           this.pendingSearches.delete(searchKey);
+          if (pendingSearch.messageId) {
+            await this.deleteMessage(message.channel_id, pendingSearch.messageId);
+          }
           const selectedTrack = pendingSearch.tracks[num - 1];
           if (selectedTrack) {
             await this.enqueueOrPlayTrack(message.channel_id, selectedTrack);
@@ -209,7 +216,7 @@ export class MusicService {
         } else {
           await this.sendReply(
             message.channel_id,
-            `⚠️ **Pilihan Tidak Valid** — Masukkan angka antara 1 hingga ${pendingSearch.tracks.length}, atau ketik \`cancel\`.`
+            `⚠️ **Pilihan Tidak Valid** — Masukkan angka antara 1 hingga ${pendingSearch.tracks.length}.`
           );
         }
         return;
@@ -496,27 +503,36 @@ export class MusicService {
       if (existing) {
         clearTimeout(existing.timeout);
         this.pendingSearches.delete(searchKey);
-      }
-
-      const timeout = setTimeout(() => {
-        if (this.pendingSearches.has(searchKey)) {
-          this.pendingSearches.delete(searchKey);
+        if (existing.messageId) {
+          await this.deleteMessage(channelId, existing.messageId);
         }
-      }, 30000);
-
-      this.pendingSearches.set(searchKey, {
-        userId: authorId,
-        tracks: candidates,
-        timeout,
-      });
+      }
 
       let msg = `🔍 **Hasil Pencarian** — *Pilih nomor 1–${candidates.length}*\n`;
       candidates.forEach((t, i) => {
         msg += `> \`${i + 1}.\` **${t.info.title}**\n> *${t.info.author}* • \`${formatDuration(t.info.length)}\`\n`;
       });
-      msg += `\n-# Ketik angka 1–${candidates.length} untuk memutar lagu, atau 'cancel' untuk membatalkan (30 detik).`;
+      msg += `\n-# Ketik angka 1–${candidates.length} untuk memutar lagu (batal otomatis dalam 15 detik).`;
 
-      await this.sendReply(channelId, msg);
+      const sentMessageId = await this.sendReply(channelId, msg);
+
+      const timeout = setTimeout(async () => {
+        const current = this.pendingSearches.get(searchKey);
+        if (current) {
+          this.pendingSearches.delete(searchKey);
+          if (current.messageId) {
+            await this.deleteMessage(channelId, current.messageId);
+          }
+        }
+      }, 15000);
+
+      this.pendingSearches.set(searchKey, {
+        userId: authorId,
+        channelId,
+        messageId: sentMessageId,
+        tracks: candidates,
+        timeout,
+      });
     } catch (err) {
       logger.error(`Error handling search command: ${(err as Error).message}`);
       await this.sendReply(channelId, `❌ **Gagal** — ${(err as Error).message}`);
@@ -852,7 +868,7 @@ export class MusicService {
     await this.sendReply(channelId, help);
   }
 
-  private async sendReply(channelId: string, content: string): Promise<void> {
+  private async sendReply(channelId: string, content: string): Promise<string | null> {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -873,17 +889,42 @@ export class MusicService {
       const channelName = this.cache?.getChannelName(channelId) ?? channelId;
       if (res.ok) {
         logger.info(`Reply sent to ${channelName}`);
+        const data = (await res.json().catch(() => null)) as { id?: string } | null;
+        return data?.id ?? null;
       } else {
         logger.warn(`Failed to send Discord message to ${channelName}: HTTP ${res.status} ${res.statusText}`);
+        return null;
       }
     } catch (err) {
       logger.warn(`Failed to send music message: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
+  private async deleteMessage(channelId: string, messageId: string): Promise<void> {
+    try {
+      const res = await fetch(`${DISCORD_GATEWAY.API_BASE_URL}/channels/${channelId}/messages/${messageId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: this.config.token,
+          'User-Agent': DISCORD_GATEWAY.DEFAULT_USER_AGENT,
+        },
+      });
+
+      if (!res.ok && res.status !== 404) {
+        logger.warn(`Failed to delete message ${messageId}: HTTP ${res.status}`);
+      }
+    } catch (err) {
+      logger.warn(`Failed to delete message: ${(err as Error).message}`);
     }
   }
 
   public destroy(): void {
     for (const pending of this.pendingSearches.values()) {
       clearTimeout(pending.timeout);
+      if (pending.messageId) {
+        this.deleteMessage(pending.channelId, pending.messageId).catch(() => {});
+      }
     }
     this.pendingSearches.clear();
     this.client.destroy();
