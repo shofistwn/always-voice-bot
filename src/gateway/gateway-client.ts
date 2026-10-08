@@ -12,7 +12,6 @@ import type {
   StreamDeleteData,
 } from '../types/discord.js';
 import { GATEWAY_OPCODES, DISCORD_GATEWAY } from '../constants/discord.js';
-import { GatewaySession } from './session.js';
 import { HeartbeatManager, type HeartbeatSender } from './heartbeat.js';
 import { createLogger } from '../logger/index.js';
 
@@ -20,7 +19,6 @@ const logger = createLogger('Gateway');
 
 export interface GatewayClientEvents {
   ready: (data: ReadyEventData) => void;
-  resumed: (sequence: number | null) => void;
   guildCreate: (data: GuildCreateData) => void;
   voiceStateUpdate: (data: VoiceState) => void;
   messageCreate: (data: MessageCreateData) => void;
@@ -31,18 +29,17 @@ export interface GatewayClientEvents {
 export class GatewayClient extends EventEmitter {
   private ws: WebSocket | null = null;
   private readonly config: BotConfig;
-  private readonly session: GatewaySession;
   private readonly heartbeat: HeartbeatManager;
+  private lastSequence: number | null = null;
   private isIntentionalClose: boolean = false;
 
-  constructor(config: BotConfig, session?: GatewaySession) {
+  constructor(config: BotConfig) {
     super();
     this.config = config;
-    this.session = session ?? new GatewaySession();
 
     const sender: HeartbeatSender = {
       send: (data: string) => this.sendRaw(data),
-      getSequence: () => this.session.getSequence(),
+      getSequence: () => this.lastSequence,
     };
 
     const handleZombieConnection = () => {
@@ -51,10 +48,6 @@ export class GatewayClient extends EventEmitter {
     };
 
     this.heartbeat = new HeartbeatManager(sender, handleZombieConnection);
-  }
-
-  public getSession(): GatewaySession {
-    return this.session;
   }
 
   public isConnected(): boolean {
@@ -67,19 +60,10 @@ export class GatewayClient extends EventEmitter {
       process.exit(1);
     }
 
-    const attemptingResume = this.session.canResume();
-    let gatewayUrl: string;
-
-    if (attemptingResume) {
-      gatewayUrl = `${this.session.getResumeGatewayUrl()}?v=10&encoding=json`;
-      logger.info('Resuming gateway session...');
-    } else {
-      gatewayUrl = DISCORD_GATEWAY.DEFAULT_URL;
-      logger.info('Connecting to Discord Gateway...');
-    }
+    logger.info('Connecting to Discord Gateway...');
 
     try {
-      this.ws = new WebSocket(gatewayUrl, {
+      this.ws = new WebSocket(DISCORD_GATEWAY.DEFAULT_URL, {
         headers: {
           'User-Agent': DISCORD_GATEWAY.DEFAULT_USER_AGENT,
         },
@@ -145,7 +129,7 @@ export class GatewayClient extends EventEmitter {
     const { op, d, s, t } = payload;
 
     if (s !== null && s !== undefined) {
-      this.session.setSequence(s);
+      this.lastSequence = s;
     }
 
     switch (op) {
@@ -153,32 +137,22 @@ export class GatewayClient extends EventEmitter {
         const hello = d as HelloData;
         this.heartbeat.start(hello.heartbeat_interval);
 
-        if (this.session.canResume()) {
-          const sid = this.session.getSessionId();
-          logger.info(`Sending RESUME (seq: ${this.session.getSequence() ?? 0})`);
-          this.sendOp(GATEWAY_OPCODES.RESUME, {
-            token: this.config.token,
-            session_id: sid,
-            seq: this.session.getSequence(),
-          });
-        } else {
-          logger.info('Sending IDENTIFY...');
-          this.sendOp(GATEWAY_OPCODES.IDENTIFY, {
-            token: this.config.token,
-            properties: {
-              $os: 'Windows',
-              $browser: 'Chrome',
-              $device: 'PC',
-            },
-            presence: {
-              status: this.config.status,
-              afk: false,
-              activities: [],
-              since: 0,
-            },
-            intents: DISCORD_GATEWAY.INTENTS,
-          });
-        }
+        logger.info('Sending IDENTIFY...');
+        this.sendOp(GATEWAY_OPCODES.IDENTIFY, {
+          token: this.config.token,
+          properties: {
+            $os: 'Windows',
+            $browser: 'Chrome',
+            $device: 'PC',
+          },
+          presence: {
+            status: this.config.status,
+            afk: false,
+            activities: [],
+            since: 0,
+          },
+          intents: DISCORD_GATEWAY.INTENTS,
+        });
         break;
       }
 
@@ -200,8 +174,7 @@ export class GatewayClient extends EventEmitter {
       }
 
       case GATEWAY_OPCODES.INVALID_SESSION: {
-        logger.error('Invalid session (OP 9). Resetting cache...');
-        this.session.reset();
+        logger.error('Invalid session (OP 9).');
         process.exit(1);
         break;
       }
@@ -220,15 +193,8 @@ export class GatewayClient extends EventEmitter {
     switch (eventType) {
       case 'READY': {
         const readyData = data as ReadyEventData;
-        this.session.setSession(readyData.session_id, readyData.resume_gateway_url);
         logger.success(`Authenticated as ${readyData.user.username}`);
         this.emit('ready', readyData);
-        break;
-      }
-
-      case 'RESUMED': {
-        logger.success(`Session resumed (seq: ${this.session.getSequence() ?? 0})`);
-        this.emit('resumed', this.session.getSequence());
         break;
       }
 

@@ -1,6 +1,5 @@
-# Environment & Session Cache
+# Environment
 .env
-.session.json
 
 # Dependencies
 node_modules/

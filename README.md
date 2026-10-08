@@ -10,7 +10,6 @@ A lightweight, modular Discord self-bot written in **TypeScript** designed to ma
 - **Voice Limit** — Monitors channel occupancy; leaves if user count exceeds `VOICE_LIMIT`, and rejoins once it is safe.
 - **Auto-Reply (Static)** — Replies with a predefined message when mentioned with a trigger phrase.
 - **Smart Wake-Up (Deafen Toggle)** — When mentioned with trigger phrase while `SELF_DEAF=True`, automatically undeafens the bot for a random duration (default 5–15 minutes) before re-deafening.
-- **Session Resume** — Automatically attempts to resume existing Discord Gateway sessions on reconnection.
 - **Modular TypeScript Architecture** — Completely decoupled modules for Gateway, Voice, Auto-Reply, Stream Watcher, Cache, and Configuration.
 - **Structured Scoped Logging** — Colorized, padded, scoped log output with configurable log filtering and entity name resolution.
 
@@ -107,8 +106,7 @@ always-voice-bot/
 │   │   └── entity-cache.ts     # In-memory channel and username resolver
 │   ├── gateway/
 │   │   ├── gateway-client.ts   # Discord Gateway WSS client (v10) & event emitter
-│   │   ├── heartbeat.ts        # Heartbeat manager (OP 1)
-│   │   └── session.ts          # Gateway session state (resume tokens & sequence)
+│   │   └── heartbeat.ts        # Heartbeat manager (OP 1)
 │   ├── voice/
 │   │   └── voice-manager.ts    # Voice channel join/leave & temporary undeafen logic
 │   ├── features/
@@ -131,7 +129,7 @@ always-voice-bot/
 The bot deliberately avoids complex nested retry loops. Fatal gateway states or unhandled network crashes trigger immediate process termination (`process.exit(1)`). When deployed in Docker, `restart: unless-stopped` provides instant, clean recovery.
 
 | Event | Action |
-|---|---|
+|---|---|\
 | OP 7 (Reconnect) | `process.exit(1)` → Docker restart |
 | OP 9 (Invalid Session) | `process.exit(1)` → Docker restart |
 | WebSocket closed unexpectedly | `process.exit(1)` → Docker restart |

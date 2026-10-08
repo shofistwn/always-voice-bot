@@ -41,12 +41,6 @@ export class AlwaysVoiceBot {
       this.voiceManager.joinVoice();
     });
 
-    this.gateway.on('resumed', () => {
-      this.voiceManager.setInVoice(false);
-      this.voiceManager.resetJoinAttempt();
-      this.voiceManager.joinVoice();
-    });
-
     this.gateway.on('guildCreate', (data) => {
       this.cache.handleGuildCreate(data);
       this.voiceManager.handleGuildCreate(data);
