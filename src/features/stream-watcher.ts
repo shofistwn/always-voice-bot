@@ -20,6 +20,11 @@ export class StreamWatcherService {
     this.sender = sender;
   }
 
+  private extractStreamerId(streamKey: string): string {
+    const parts = streamKey.split(':');
+    return parts[parts.length - 1] || 'unknown';
+  }
+
   public handleGuildCreate(data: GuildCreateData, botUserId: string | null): void {
     if (!this.config.autoWatchStream || data.id !== this.config.guildId) {
       return;
@@ -104,8 +109,8 @@ export class StreamWatcherService {
       });
       this.activeStreams.add(streamKey);
 
-      const userDisplay = streamerId ? `user ${streamerId}` : 'streamer';
-      logger.success(`Watching stream from ${userDisplay}`);
+      const userId = streamerId ?? this.extractStreamerId(streamKey);
+      logger.success(`Watching stream from user ${userId}`);
     } catch (error) {
       logger.warn(`Failed to send STREAM_WATCH: ${(error as Error).message}`);
     }
@@ -123,7 +128,9 @@ export class StreamWatcherService {
         });
       }
       this.activeStreams.delete(streamKey);
-      logger.info(`Stream ended (${streamKey}). Stopped watching.`);
+
+      const userId = this.extractStreamerId(streamKey);
+      logger.info(`Stream ended from user ${userId}`);
     } catch (error) {
       logger.warn(`Failed to send STREAM_DELETE: ${(error as Error).message}`);
       this.activeStreams.delete(streamKey);
