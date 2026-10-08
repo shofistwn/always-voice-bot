@@ -191,10 +191,6 @@ export class MusicService {
       const num = parseInt(lower, 10);
       if (!Number.isNaN(num) && String(num) === lower) {
         if (!this.isUserAllowed(message.author.id)) {
-          await this.sendReply(
-            message.channel_id,
-            '⛔ **Akses Ditolak** — Anda tidak memiliki izin untuk menggunakan perintah musik bot ini.'
-          );
           return;
         }
 
@@ -263,12 +259,8 @@ export class MusicService {
 
     if (!knownCommands.includes(cmd)) return;
 
-    // 1. Verify user whitelist permissions
+    // 1. Verify user whitelist permissions (silently ignore unauthorized users)
     if (!this.isUserAllowed(message.author.id)) {
-      await this.sendReply(
-        message.channel_id,
-        '⛔ **Akses Ditolak** — Anda tidak memiliki izin untuk menggunakan perintah musik bot ini.'
-      );
       return;
     }
 
