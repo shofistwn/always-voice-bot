@@ -6,10 +6,11 @@ A lightweight, modular Discord self-bot written in **TypeScript** designed to ma
 
 - **Auto-Join Voice Channel** — Automatically connects and stays inside a configured voice channel.
 - **Auto-Rejoin** — Reconnects automatically if disconnected from voice (with a 5-second backoff).
+- **Auto-Watch Streaming** — Automatically detects screen share / Go Live streams in the channel and watches them (OP 20 `STREAM_WATCH`) with zero video decoding overhead.
 - **Voice Limit** — Monitors channel occupancy; leaves if user count exceeds `VOICE_LIMIT`, and rejoins once it is safe.
 - **Auto-Reply (Static)** — Replies with a predefined message when mentioned with a trigger phrase.
 - **Session Resume** — Automatically attempts to resume existing Discord Gateway sessions on reconnection.
-- **Modular TypeScript Architecture** — Completely decoupled modules for Gateway, Voice, Auto-Reply, and Configuration.
+- **Modular TypeScript Architecture** — Completely decoupled modules for Gateway, Voice, Auto-Reply, Stream Watcher, and Configuration.
 - **Structured Scoped Logging** — Colorized, padded, scoped log output with configurable log filtering.
 
 ## 🚀 Quick Start
@@ -71,6 +72,7 @@ All configuration is handled via environment variables in the `.env` file:
 | `SELF_MUTE` | `True` | Mute yourself in the voice channel. |
 | `SELF_DEAF` | `False` | Deafen yourself in the voice channel. |
 | `LOG_LEVEL` | `info` | Minimum log level (`debug`, `info`, `warn`, `error`). |
+| `AUTO_WATCH_STREAM` | `True` | Automatically watch screen shares / Go Live streams in the channel. |
 
 ### Voice Limit
 
@@ -105,7 +107,8 @@ always-voice-bot/
 │   ├── voice/
 │   │   └── voice-manager.ts    # Voice channel join/leave & population limit tracking
 │   ├── features/
-│   │   └── auto-reply.ts       # Mention-based static auto-reply service
+│   │   ├── auto-reply.ts       # Mention-based static auto-reply service
+│   │   └── stream-watcher.ts   # Go Live / Screen share auto-viewer (OP 20)
 │   ├── logger/
 │   │   └── index.ts            # Colorized timestamped scoped logger
 │   └── types/

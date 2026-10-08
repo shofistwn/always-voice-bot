@@ -8,6 +8,7 @@ export interface BotConfig {
   status: OnlineStatus;
   selfMute: boolean;
   selfDeaf: boolean;
+  autoWatchStream: boolean;
 
   autoReply: {
     enabled: boolean;

@@ -46,6 +46,7 @@ export function loadConfig(): BotConfig {
     status: parseStatus(process.env.STATUS, 'dnd'),
     selfMute: parseBoolean(process.env.SELF_MUTE, true),
     selfDeaf: parseBoolean(process.env.SELF_DEAF, false),
+    autoWatchStream: parseBoolean(process.env.AUTO_WATCH_STREAM, true),
     autoReply: {
       enabled: parseBoolean(process.env.AUTO_REPLY, false),
       trigger: (process.env.REPLY_TRIGGER || 'hey wake up!').trim().toLowerCase(),

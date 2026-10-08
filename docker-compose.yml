@@ -14,6 +14,7 @@ services:
       - SELF_MUTE=${SELF_MUTE:-True}
       - SELF_DEAF=${SELF_DEAF:-False}
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      - AUTO_WATCH_STREAM=${AUTO_WATCH_STREAM:-True}
 
       - AUTO_REPLY=${AUTO_REPLY:-False}
       - REPLY_DELAY=${REPLY_DELAY:-5}

@@ -32,6 +32,8 @@ export interface VoiceState {
   mute?: boolean;
   self_deaf?: boolean;
   self_mute?: boolean;
+  self_stream?: boolean;
+  self_video?: boolean;
 }
 
 export interface GuildCreateData {
@@ -56,4 +58,17 @@ export interface MessageCreateData {
   author: MessageAuthor;
   content: string;
   mentions: MentionUser[];
+}
+
+export interface StreamCreateData {
+  stream_key: string;
+  viewer_ids?: string[];
+  rtc_server_id?: string;
+  paused?: boolean;
+}
+
+export interface StreamDeleteData {
+  stream_key: string;
+  unavailable?: boolean;
+  reason?: string;
 }

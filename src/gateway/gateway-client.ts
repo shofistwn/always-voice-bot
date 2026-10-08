@@ -8,6 +8,8 @@ import type {
   GuildCreateData,
   VoiceState,
   MessageCreateData,
+  StreamCreateData,
+  StreamDeleteData,
 } from '../types/discord.js';
 import { GATEWAY_OPCODES, DISCORD_GATEWAY } from '../constants/discord.js';
 import { GatewaySession } from './session.js';
@@ -22,6 +24,8 @@ export interface GatewayClientEvents {
   guildCreate: (data: GuildCreateData) => void;
   voiceStateUpdate: (data: VoiceState) => void;
   messageCreate: (data: MessageCreateData) => void;
+  streamCreate: (data: StreamCreateData) => void;
+  streamDelete: (data: StreamDeleteData) => void;
 }
 
 export class GatewayClient extends EventEmitter {
@@ -242,6 +246,16 @@ export class GatewayClient extends EventEmitter {
 
       case 'MESSAGE_CREATE': {
         this.emit('messageCreate', data as MessageCreateData);
+        break;
+      }
+
+      case 'STREAM_CREATE': {
+        this.emit('streamCreate', data as StreamCreateData);
+        break;
+      }
+
+      case 'STREAM_DELETE': {
+        this.emit('streamDelete', data as StreamDeleteData);
         break;
       }
 
