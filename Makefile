@@ -36,7 +36,7 @@ install:
 dev:
 	@echo "Ensuring NodeLink audio node is running..."
 	$(COMPOSE) up -d nodelink
-	npm run dev
+	NODELINK_HOST=localhost npm run dev
 
 # Start only NodeLink audio server
 nodelink:

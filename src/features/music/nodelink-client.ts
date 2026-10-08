@@ -24,10 +24,12 @@ export class NodeLinkClient extends EventEmitter {
   private botUserId: string | null = null;
   private isDestroyed: boolean = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private activeHost: string;
 
   constructor(config: MusicConfig) {
     super();
     this.config = config;
+    this.activeHost = config.nodelinkHost;
   }
 
   public getSessionId(): string | null {
@@ -40,12 +42,12 @@ export class NodeLinkClient extends EventEmitter {
 
   public getRestBaseUrl(): string {
     const protocol = this.config.nodelinkSecure ? 'https' : 'http';
-    return `${protocol}://${this.config.nodelinkHost}:${this.config.nodelinkPort}/v4`;
+    return `${protocol}://${this.activeHost}:${this.config.nodelinkPort}/v4`;
   }
 
   public getWsUrl(): string {
     const protocol = this.config.nodelinkSecure ? 'wss' : 'ws';
-    return `${protocol}://${this.config.nodelinkHost}:${this.config.nodelinkPort}/v4/websocket`;
+    return `${protocol}://${this.activeHost}:${this.config.nodelinkPort}/v4/websocket`;
   }
 
   public start(botUserId: string): void {
@@ -58,7 +60,7 @@ export class NodeLinkClient extends EventEmitter {
     if (!this.botUserId || this.isDestroyed) return;
 
     const wsUrl = this.getWsUrl();
-    logger.info(`Connecting to NodeLink server at ${this.config.nodelinkHost}:${this.config.nodelinkPort}...`);
+    logger.info(`Connecting to NodeLink server at ${this.activeHost}:${this.config.nodelinkPort}...`);
 
     try {
       this.ws = new WebSocket(wsUrl, {
@@ -87,6 +89,11 @@ export class NodeLinkClient extends EventEmitter {
       });
 
       this.ws.on('error', (err: Error) => {
+        if (this.activeHost === 'nodelink' && err.message.includes('ENOTFOUND nodelink')) {
+          logger.warn('Host "nodelink" not resolvable on host system. Falling back to "localhost"...');
+          this.activeHost = 'localhost';
+          return;
+        }
         logger.error(`Connection error: ${err.message}`);
       });
     } catch (error) {
