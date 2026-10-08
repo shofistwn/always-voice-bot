@@ -46,7 +46,7 @@ export class GatewayClient extends EventEmitter {
     };
 
     const handleZombieConnection = () => {
-      logger.error('Zombie connection detected (dead socket). Triggering fail-fast exit...');
+      logger.error('Zombie connection detected. Restarting...');
       process.exit(1);
     };
 
@@ -63,7 +63,7 @@ export class GatewayClient extends EventEmitter {
 
   public connect(): void {
     if (!this.config.token) {
-      logger.error('No token provided. Please set the TOKEN environment variable.');
+      logger.error('Missing TOKEN environment variable.');
       process.exit(1);
     }
 
@@ -72,10 +72,10 @@ export class GatewayClient extends EventEmitter {
 
     if (attemptingResume) {
       gatewayUrl = `${this.session.getResumeGatewayUrl()}?v=10&encoding=json`;
-      logger.info(`Connecting to resume endpoint (${this.session.getResumeGatewayUrl()})...`);
+      logger.info('Resuming gateway session...');
     } else {
       gatewayUrl = DISCORD_GATEWAY.DEFAULT_URL;
-      logger.info('Connecting to Discord Gateway (v10)...');
+      logger.info('Connecting to Discord Gateway...');
     }
 
     try {
@@ -86,7 +86,7 @@ export class GatewayClient extends EventEmitter {
       });
 
       this.ws.on('open', () => {
-        logger.info('WebSocket connection established.');
+        logger.info('WebSocket connected.');
       });
 
       this.ws.on('message', (rawData: WebSocket.RawData) => {
@@ -94,25 +94,23 @@ export class GatewayClient extends EventEmitter {
         this.handleMessage(text);
       });
 
-      this.ws.on('close', (code: number, reason: Buffer) => {
+      this.ws.on('close', (code: number) => {
         this.heartbeat.stop();
         if (this.isIntentionalClose) {
-          logger.info(`WebSocket closed cleanly (code: ${code}).`);
+          logger.info(`WebSocket closed (code: ${code}).`);
           return;
         }
-        logger.error(
-          `WebSocket connection dropped unexpectedly (code: ${code}, reason: "${reason.toString() || 'none'}"). Crashing for Docker recovery...`
-        );
+        logger.error(`WebSocket closed unexpectedly (code: ${code}).`);
         process.exit(1);
       });
 
       this.ws.on('error', (error: Error) => {
         this.heartbeat.stop();
-        logger.error(`WebSocket socket error: ${error.message}. Crashing for Docker recovery...`);
+        logger.error(`WebSocket error: ${error.message}`);
         process.exit(1);
       });
     } catch (error) {
-      logger.error(`Failed to initiate connection: ${(error as Error).message}. Crashing...`);
+      logger.error(`Connection failed: ${(error as Error).message}`);
       process.exit(1);
     }
   }
@@ -157,14 +155,14 @@ export class GatewayClient extends EventEmitter {
 
         if (this.session.canResume()) {
           const sid = this.session.getSessionId();
-          logger.info(`Sending RESUME payload (session: ${sid ? sid.slice(0, 8) + '...' : 'unknown'}, seq: ${this.session.getSequence()})`);
+          logger.info(`Sending RESUME (seq: ${this.session.getSequence() ?? 0})`);
           this.sendOp(GATEWAY_OPCODES.RESUME, {
             token: this.config.token,
             session_id: sid,
             seq: this.session.getSequence(),
           });
         } else {
-          logger.info('Sending IDENTIFY payload for initial session...');
+          logger.info('Sending IDENTIFY...');
           this.sendOp(GATEWAY_OPCODES.IDENTIFY, {
             token: this.config.token,
             properties: {
@@ -190,19 +188,19 @@ export class GatewayClient extends EventEmitter {
       }
 
       case GATEWAY_OPCODES.HEARTBEAT: {
-        logger.debug('Gateway requested immediate heartbeat (OP 1)');
+        logger.debug('Gateway requested heartbeat (OP 1)');
         this.heartbeat.sendHeartbeat();
         break;
       }
 
       case GATEWAY_OPCODES.RECONNECT: {
-        logger.error('Gateway requested reconnection (OP 7). Exiting for restart...');
+        logger.error('Gateway requested reconnect (OP 7).');
         process.exit(1);
         break;
       }
 
       case GATEWAY_OPCODES.INVALID_SESSION: {
-        logger.error('Invalid session reported by Gateway (OP 9). Resetting cache and exiting for restart...');
+        logger.error('Invalid session (OP 9). Resetting cache...');
         this.session.reset();
         process.exit(1);
         break;
@@ -223,13 +221,13 @@ export class GatewayClient extends EventEmitter {
       case 'READY': {
         const readyData = data as ReadyEventData;
         this.session.setSession(readyData.session_id, readyData.resume_gateway_url);
-        logger.success(`Authenticated as ${readyData.user.username} (ID: ${readyData.user.id}, Session: ${readyData.session_id.slice(0, 8)}...)`);
+        logger.success(`Authenticated as ${readyData.user.username}`);
         this.emit('ready', readyData);
         break;
       }
 
       case 'RESUMED': {
-        logger.success(`Session resumed successfully (sequence: ${this.session.getSequence() ?? 0})`);
+        logger.success(`Session resumed (seq: ${this.session.getSequence() ?? 0})`);
         this.emit('resumed', this.session.getSequence());
         break;
       }

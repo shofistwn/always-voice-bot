@@ -49,12 +49,10 @@ export class VoiceManager {
           self_mute: this.config.selfMute,
           self_deaf: this.config.selfDeaf,
         });
-        logger.info(
-          `Joining channel ${this.config.channelId} (guild: ${this.config.guildId}, mute: ${this.config.selfMute}, deaf: ${this.config.selfDeaf})`
-        );
+        logger.info(`Joining channel ${this.config.channelId}...`);
         this.lastJoinAttempt = Date.now();
       } catch (error) {
-        logger.error(`Voice join dispatch failed: ${(error as Error).message}`);
+        logger.error(`Failed to join voice: ${(error as Error).message}`);
       }
     }
   }
@@ -69,9 +67,9 @@ export class VoiceManager {
           self_mute: false,
           self_deaf: false,
         });
-        logger.info(`Left channel ${this.config.channelId} due to occupancy limit.`);
+        logger.info('Left voice channel (limit reached).');
       } catch (error) {
-        logger.error(`Voice leave dispatch failed: ${(error as Error).message}`);
+        logger.error(`Failed to leave voice: ${(error as Error).message}`);
         this.isInVoice = true;
       }
     }
@@ -85,12 +83,12 @@ export class VoiceManager {
     const currentCount = this.voiceUsers.size;
     if (currentCount < this.config.voiceLimit) {
       if (!this.isInVoice) {
-        logger.info(`Occupancy safe (${currentCount}/${this.config.voiceLimit}). Rejoining voice channel.`);
+        logger.info(`Voice limit safe (${currentCount}/${this.config.voiceLimit}). Rejoining...`);
         this.joinVoice();
       }
     } else if (currentCount > this.config.voiceLimit) {
       if (this.isInVoice) {
-        logger.warn(`Occupancy over limit (${currentCount} > ${this.config.voiceLimit}). Leaving channel immediately.`);
+        logger.warn(`Voice limit exceeded (${currentCount}/${this.config.voiceLimit}). Leaving...`);
         this.leaveVoice();
       }
     }
@@ -107,7 +105,7 @@ export class VoiceManager {
         this.voiceUsers.add(vs.user_id);
       }
     }
-    logger.debug(`Synchronized guild voice states: ${this.voiceUsers.size} user(s) in target channel`);
+    logger.debug(`Synced voice states: ${this.voiceUsers.size} user(s) in channel`);
     this.checkVoiceLimit();
   }
 
@@ -118,9 +116,9 @@ export class VoiceManager {
       this.isInVoice = data.channel_id !== null;
 
       if (this.isInVoice && !wasInVoice) {
-        logger.success(`Active in voice channel ${this.config.channelId}`);
+        logger.success(`Connected to channel ${this.config.channelId}`);
       } else if (wasInVoice && !this.isInVoice) {
-        logger.warn('Bot disconnected from voice channel. Scheduling rejoin in 5 seconds...');
+        logger.warn('Disconnected from voice channel. Rejoining in 5s...');
         if (this.rejoinTimer) {
           clearTimeout(this.rejoinTimer);
         }

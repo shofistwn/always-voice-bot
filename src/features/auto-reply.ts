@@ -35,7 +35,7 @@ export class AutoReplyService {
     }
 
     logger.info(
-      `Trigger "${this.config.autoReply.trigger}" from ${message.author.username} (${message.author.id}) in channel ${message.channel_id}. Replying in ${this.config.autoReply.delaySeconds}s...`
+      `Triggered by ${message.author.username}. Replying in ${this.config.autoReply.delaySeconds}s...`
     );
 
     this.sendDelayedReply(message.channel_id);
@@ -66,12 +66,12 @@ export class AutoReplyService {
         clearTimeout(timeoutId);
 
         if (response.ok) {
-          logger.success(`Reply delivered to channel ${channelId}`);
+          logger.success(`Reply sent to channel ${channelId}`);
         } else {
-          logger.warn(`Reply API rejected request with HTTP status ${response.status}`);
+          logger.warn(`Reply failed with HTTP status ${response.status}`);
         }
       } catch (error) {
-        logger.error(`Failed to send auto-reply message: ${(error as Error).message}`);
+        logger.error(`Reply failed: ${(error as Error).message}`);
       }
     }, delayMs);
 

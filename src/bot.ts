@@ -67,12 +67,12 @@ export class AlwaysVoiceBot {
   }
 
   public start(): void {
-    logger.info('Initializing AlwaysVoiceBot engine...');
+    logger.info('Starting AlwaysVoiceBot...');
     this.gateway.connect();
   }
 
   public stop(): void {
-    logger.info('Stopping AlwaysVoiceBot services gracefully...');
+    logger.info('Stopping AlwaysVoiceBot...');
     this.streamWatcher.destroy();
     this.autoReply.destroy();
     this.voiceManager.destroy();

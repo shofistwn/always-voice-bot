@@ -29,8 +29,7 @@ export class HeartbeatManager {
     // Discord Gateway v10: Apply jitter to the first heartbeat (interval * Math.random())
     const initialJitter = Math.floor(intervalMs * Math.random());
     const intervalSec = (intervalMs / 1000).toFixed(1);
-    const jitterSec = (initialJitter / 1000).toFixed(1);
-    logger.info(`Loop started (interval: ${intervalSec}s, initial jitter: ${jitterSec}s)`);
+    logger.info(`Started (interval: ${intervalSec}s)`);
 
     this.initialTimer = setTimeout(() => {
       this.sendHeartbeat();
@@ -39,7 +38,7 @@ export class HeartbeatManager {
       // Regular heartbeat interval thereafter
       this.intervalTimer = setInterval(() => {
         if (!this.acknowledged) {
-          logger.warn('Heartbeat ACK was not received before next heartbeat. Zombie connection detected.');
+          logger.warn('Zombie connection detected (missed heartbeat ACK).');
           this.stop();
           this.onZombieConnection?.();
           return;
@@ -59,7 +58,7 @@ export class HeartbeatManager {
         d: seq,
       });
       this.sender.send(payload);
-      logger.debug(`Heartbeat sent (sequence: ${seq ?? 'null'})`);
+      logger.debug(`Heartbeat sent (seq: ${seq ?? 'null'})`);
     } catch (error) {
       logger.warn(`Failed to dispatch heartbeat: ${(error as Error).message}`);
     }

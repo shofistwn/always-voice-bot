@@ -58,7 +58,7 @@ export class GatewaySession {
     try {
       if (fs.existsSync(this.filePath)) {
         fs.unlinkSync(this.filePath);
-        logger.info('Gateway session cache cleared.');
+        logger.info('Session cache cleared.');
       }
     } catch {
       // Ignore cleanup error
@@ -74,7 +74,7 @@ export class GatewaySession {
           this.sessionId = data.sessionId;
           this.lastSequence = data.lastSequence;
           this.resumeGatewayUrl = data.resumeGatewayUrl;
-          logger.info(`Loaded cached session (${this.sessionId.slice(0, 8)}..., seq: ${this.lastSequence ?? 0})`);
+          logger.info(`Restored session from cache (seq: ${this.lastSequence ?? 0})`);
         }
       }
     } catch {
