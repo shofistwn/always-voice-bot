@@ -331,6 +331,12 @@ export class MusicService {
   private async playNext(): Promise<void> {
     if (this.queue.length > 0) {
       this.currentTrack = this.queue.shift()!;
+      if (this.lastChannelId) {
+        await this.sendReply(
+          this.lastChannelId,
+          `🎶 Sekarang memutar: **${this.currentTrack.info.title}** oleh **${this.currentTrack.info.author}** [${formatDuration(this.currentTrack.info.length)}]`
+        );
+      }
       await this.startPlayback(this.currentTrack);
       return;
     }
@@ -355,6 +361,9 @@ export class MusicService {
     this.voiceManager.restoreMute();
     this.client.updatePlayer(this.config.guildId, { track: { encoded: null } }).catch(() => {});
     logger.info('Queue finished. Playback stopped.');
+    if (this.lastChannelId) {
+      await this.sendReply(this.lastChannelId, '⏹️ Antrean lagu telah selesai.');
+    }
   }
 
   private async fetchRecommendation(previousTrack: NodeLinkTrack): Promise<NodeLinkTrack | null> {
@@ -496,7 +505,7 @@ export class MusicService {
       const maxDisplay = 10;
       const displayQueue = this.queue.slice(0, maxDisplay);
       displayQueue.forEach((t, i) => {
-        msg += `${i + 1}. **${t.info.title}** [${formatDuration(t.info.length)}]\n`;
+        msg += `${i + 1}. **${t.info.title}** [${formatDuration(t.info.length)}]` + '\n';
       });
       if (this.queue.length > maxDisplay) {
         msg += `...dan ${this.queue.length - maxDisplay} lagu lainnya.\n`;
