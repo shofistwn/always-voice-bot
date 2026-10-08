@@ -57,7 +57,7 @@ export class VoiceManager {
     }
   }
 
-  public temporaryUndeafen(minSeconds = 30, maxSeconds = 120): void {
+  public temporaryUndeafen(minSeconds = 300, maxSeconds = 900): void {
     if (!this.config.selfDeaf) {
       return;
     }
@@ -69,7 +69,9 @@ export class VoiceManager {
 
     const duration = Math.floor(Math.random() * (maxSeconds - minSeconds + 1)) + minSeconds;
     this.setDeaf(false);
-    logger.info(`Undeafened (woken up). Re-deafening in ${duration}s...`);
+
+    const durationDisplay = duration >= 60 ? `${(duration / 60).toFixed(1)}m` : `${duration}s`;
+    logger.info(`Undeafened (woken up). Re-deafening in ${durationDisplay}...`);
 
     this.deafenTimer = setTimeout(() => {
       this.deafenTimer = null;

@@ -9,7 +9,7 @@ A lightweight, modular Discord self-bot written in **TypeScript** designed to ma
 - **Auto-Watch Streaming** — Automatically detects screen share / Go Live streams in the channel and watches them (OP 20 `STREAM_WATCH`) with zero video decoding overhead.
 - **Voice Limit** — Monitors channel occupancy; leaves if user count exceeds `VOICE_LIMIT`, and rejoins once it is safe.
 - **Auto-Reply (Static)** — Replies with a predefined message when mentioned with a trigger phrase.
-- **Smart Wake-Up (Deafen Toggle)** — When mentioned with trigger phrase while `SELF_DEAF=True`, automatically undeafens the bot for a random duration (default 30–120s) before re-deafening.
+- **Smart Wake-Up (Deafen Toggle)** — When mentioned with trigger phrase while `SELF_DEAF=True`, automatically undeafens the bot for a random duration (default 5–15 minutes) before re-deafening.
 - **Session Resume** — Automatically attempts to resume existing Discord Gateway sessions on reconnection.
 - **Modular TypeScript Architecture** — Completely decoupled modules for Gateway, Voice, Auto-Reply, Stream Watcher, Cache, and Configuration.
 - **Structured Scoped Logging** — Colorized, padded, scoped log output with configurable log filtering and entity name resolution.
@@ -89,8 +89,8 @@ All configuration is handled via environment variables in the `.env` file:
 | `REPLY_TRIGGER` | `hey wake up!` | Trigger phrase (case-insensitive) to send the reply. |
 | `REPLY_MESSAGE` | `yes` | Static reply message content. |
 | `REPLY_DELAY` | `5` | Seconds to wait before replying. |
-| `UNDEAFEN_MIN_SECONDS` | `30` | Minimum duration (seconds) to stay undeafened when woken up. |
-| `UNDEAFEN_MAX_SECONDS` | `120` | Maximum duration (seconds) to stay undeafened when woken up. |
+| `UNDEAFEN_MIN_SECONDS` | `300` | Minimum duration (seconds) to stay undeafened when woken up (default: 5m). |
+| `UNDEAFEN_MAX_SECONDS` | `900` | Maximum duration (seconds) to stay undeafened when woken up (default: 15m). |
 
 ## 🏗️ Project Architecture
 
