@@ -71,6 +71,13 @@ export class AlwaysVoiceBot {
     this.gateway.on('streamDelete', (data) => {
       this.streamWatcher.handleStreamDelete(data);
     });
+
+    this.autoReply.on('trigger', () => {
+      this.voiceManager.temporaryUndeafen(
+        this.config.autoReply.undeafenMinSeconds,
+        this.config.autoReply.undeafenMaxSeconds
+      );
+    });
   }
 
   public start(): void {

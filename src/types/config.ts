@@ -15,5 +15,7 @@ export interface BotConfig {
     trigger: string;
     message: string;
     delaySeconds: number;
+    undeafenMinSeconds: number;
+    undeafenMaxSeconds: number;
   };
 }

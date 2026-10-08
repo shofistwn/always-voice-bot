@@ -9,9 +9,10 @@ A lightweight, modular Discord self-bot written in **TypeScript** designed to ma
 - **Auto-Watch Streaming** — Automatically detects screen share / Go Live streams in the channel and watches them (OP 20 `STREAM_WATCH`) with zero video decoding overhead.
 - **Voice Limit** — Monitors channel occupancy; leaves if user count exceeds `VOICE_LIMIT`, and rejoins once it is safe.
 - **Auto-Reply (Static)** — Replies with a predefined message when mentioned with a trigger phrase.
+- **Smart Wake-Up (Deafen Toggle)** — When mentioned with trigger phrase while `SELF_DEAF=True`, automatically undeafens the bot for a random duration (default 30–120s) before re-deafening.
 - **Session Resume** — Automatically attempts to resume existing Discord Gateway sessions on reconnection.
-- **Modular TypeScript Architecture** — Completely decoupled modules for Gateway, Voice, Auto-Reply, Stream Watcher, and Configuration.
-- **Structured Scoped Logging** — Colorized, padded, scoped log output with configurable log filtering.
+- **Modular TypeScript Architecture** — Completely decoupled modules for Gateway, Voice, Auto-Reply, Stream Watcher, Cache, and Configuration.
+- **Structured Scoped Logging** — Colorized, padded, scoped log output with configurable log filtering and entity name resolution.
 
 ## 🚀 Quick Start
 
@@ -80,7 +81,7 @@ All configuration is handled via environment variables in the `.env` file:
 |---|---|---|
 | `VOICE_LIMIT` | `0` | Max users before leaving (0 = disabled). Leaves if count > limit, rejoins when count < limit. |
 
-### Auto-Reply (Static)
+### Auto-Reply (Static) & Wake-Up
 
 | Variable | Default | Description |
 |---|---|---|
@@ -88,6 +89,8 @@ All configuration is handled via environment variables in the `.env` file:
 | `REPLY_TRIGGER` | `hey wake up!` | Trigger phrase (case-insensitive) to send the reply. |
 | `REPLY_MESSAGE` | `yes` | Static reply message content. |
 | `REPLY_DELAY` | `5` | Seconds to wait before replying. |
+| `UNDEAFEN_MIN_SECONDS` | `30` | Minimum duration (seconds) to stay undeafened when woken up. |
+| `UNDEAFEN_MAX_SECONDS` | `120` | Maximum duration (seconds) to stay undeafened when woken up. |
 
 ## 🏗️ Project Architecture
 
@@ -100,12 +103,14 @@ always-voice-bot/
 │   │   └── index.ts            # Environment loader & typed config parser
 │   ├── constants/
 │   │   └── discord.ts          # Gateway opcodes, URLs, and intents
+│   ├── cache/
+│   │   └── entity-cache.ts     # In-memory channel and username resolver
 │   ├── gateway/
 │   │   ├── gateway-client.ts   # Discord Gateway WSS client (v10) & event emitter
 │   │   ├── heartbeat.ts        # Heartbeat manager (OP 1)
 │   │   └── session.ts          # Gateway session state (resume tokens & sequence)
 │   ├── voice/
-│   │   └── voice-manager.ts    # Voice channel join/leave & population limit tracking
+│   │   └── voice-manager.ts    # Voice channel join/leave & temporary undeafen logic
 │   ├── features/
 │   │   ├── auto-reply.ts       # Mention-based static auto-reply service
 │   │   └── stream-watcher.ts   # Go Live / Screen share auto-viewer (OP 20)

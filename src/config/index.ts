@@ -52,6 +52,8 @@ export function loadConfig(): BotConfig {
       trigger: (process.env.REPLY_TRIGGER || 'hey wake up!').trim().toLowerCase(),
       message: process.env.REPLY_MESSAGE || 'yes',
       delaySeconds: parseNumber(process.env.REPLY_DELAY, 5),
+      undeafenMinSeconds: parseNumber(process.env.UNDEAFEN_MIN_SECONDS, 30),
+      undeafenMaxSeconds: parseNumber(process.env.UNDEAFEN_MAX_SECONDS, 120),
     },
   };
 }

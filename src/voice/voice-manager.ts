@@ -19,11 +19,14 @@ export class VoiceManager {
   private voiceUsers: Set<string> = new Set();
   private lastJoinAttempt: number = 0;
   private rejoinTimer: NodeJS.Timeout | null = null;
+  private deafenTimer: NodeJS.Timeout | null = null;
+  private currentSelfDeaf: boolean;
 
   constructor(config: BotConfig, sender: VoiceGatewaySender, cache?: EntityCache) {
     this.config = config;
     this.sender = sender;
     this.cache = cache;
+    this.currentSelfDeaf = config.selfDeaf;
   }
 
   public getInVoice(): boolean {
@@ -38,6 +41,45 @@ export class VoiceManager {
     this.lastJoinAttempt = 0;
   }
 
+  public setDeaf(deaf: boolean): void {
+    this.currentSelfDeaf = deaf;
+    if (this.sender.isConnected() && this.isInVoice) {
+      try {
+        this.sender.sendOp(GATEWAY_OPCODES.VOICE_STATE_UPDATE, {
+          guild_id: this.config.guildId,
+          channel_id: this.config.channelId,
+          self_mute: this.config.selfMute,
+          self_deaf: deaf,
+        });
+      } catch (error) {
+        logger.error(`Failed to update deaf state: ${(error as Error).message}`);
+      }
+    }
+  }
+
+  public temporaryUndeafen(minSeconds = 30, maxSeconds = 120): void {
+    if (!this.config.selfDeaf) {
+      return;
+    }
+
+    if (this.deafenTimer) {
+      clearTimeout(this.deafenTimer);
+      this.deafenTimer = null;
+    }
+
+    const duration = Math.floor(Math.random() * (maxSeconds - minSeconds + 1)) + minSeconds;
+    this.setDeaf(false);
+    logger.info(`Undeafened (woken up). Re-deafening in ${duration}s...`);
+
+    this.deafenTimer = setTimeout(() => {
+      this.deafenTimer = null;
+      if (this.config.selfDeaf) {
+        this.setDeaf(true);
+        logger.info('Re-deafened.');
+      }
+    }, duration * 1000);
+  }
+
   public joinVoice(): void {
     const now = Date.now();
     if (now - this.lastJoinAttempt < 10_000) {
@@ -50,7 +92,7 @@ export class VoiceManager {
           guild_id: this.config.guildId,
           channel_id: this.config.channelId,
           self_mute: this.config.selfMute,
-          self_deaf: this.config.selfDeaf,
+          self_deaf: this.currentSelfDeaf,
         });
 
         const channelName = this.cache?.getChannelName(this.config.channelId) ?? this.config.channelId;
@@ -153,6 +195,10 @@ export class VoiceManager {
     if (this.rejoinTimer) {
       clearTimeout(this.rejoinTimer);
       this.rejoinTimer = null;
+    }
+    if (this.deafenTimer) {
+      clearTimeout(this.deafenTimer);
+      this.deafenTimer = null;
     }
   }
 }
