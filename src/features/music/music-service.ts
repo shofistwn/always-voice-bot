@@ -218,12 +218,18 @@ export class MusicService {
 
   private async handlePlayCommand(channelId: string, query: string): Promise<void> {
     if (!query) {
-      await this.sendReply(channelId, `❌ Silakan masukkan judul atau URL lagu. Contoh: \`${this.config.music.prefix}play never gonna give you up\``);
+      await this.sendReply(
+        channelId,
+        `⚠️ **Perhatian** — Masukkan judul atau tautan lagu.\n> Contoh: \`${this.config.music.prefix}play suket teki didi\``
+      );
       return;
     }
 
     if (!this.client.isConnected()) {
-      await this.sendReply(channelId, '⚠️ Server musik NodeLink belum terhubung. Coba beberapa saat lagi.');
+      await this.sendReply(
+        channelId,
+        '⚠️ **Koneksi** — Server audio NodeLink belum siap, silakan coba beberapa saat lagi.'
+      );
       return;
     }
 
@@ -236,7 +242,7 @@ export class MusicService {
 
       if (result.loadType === 'empty' || result.loadType === 'error') {
         logger.warn(`Search returned no results (loadType: ${result.loadType})`);
-        await this.sendReply(channelId, '❌ Lagu tidak ditemukan.');
+        await this.sendReply(channelId, '❌ **Tidak Ditemukan** — Lagu atau playlist tidak ditemukan.');
         return;
       }
 
@@ -246,7 +252,7 @@ export class MusicService {
         const playlist = result.data as NodeLinkPlaylistData;
         const tracks = playlist.tracks || [];
         if (tracks.length === 0) {
-          await this.sendReply(channelId, '❌ Lagu tidak ditemukan.');
+          await this.sendReply(channelId, '❌ **Kosong** — Playlist tidak memuat lagu.');
           return;
         }
 
@@ -259,7 +265,7 @@ export class MusicService {
           this.queue.push(...tracks);
           await this.sendReply(
             channelId,
-            `🎶 Menambahkan **${tracks.length} lagu** dari playlist **${playlist.info.name}** ke antrean.`
+            `📁 **Playlist Ditambahkan**\n> **${playlist.info.name}**\n> *${tracks.length} lagu berhasil dimasukkan ke antrean.*`
           );
 
           if (!this.currentTrack) {
@@ -268,8 +274,7 @@ export class MusicService {
           return;
         }
 
-        // NodeLink returns search results wrapped as a playlist ("Search results for: ...")
-        // Pick only the first / top result
+        // Search results wrapped in playlist container -> pick top result
         trackToPlay = tracks[0] ?? null;
       } else if (result.loadType === 'track') {
         trackToPlay = result.data as NodeLinkTrack;
@@ -279,27 +284,30 @@ export class MusicService {
       }
 
       if (!trackToPlay) {
-        await this.sendReply(channelId, '❌ Lagu tidak ditemukan.');
+        await this.sendReply(channelId, '❌ **Tidak Ditemukan** — Lagu tidak ditemukan.');
         return;
       }
+
+      const durationStr = formatDuration(trackToPlay.info.length);
+      const linkStr = trackToPlay.info.uri ? ` • [Tautan](<${trackToPlay.info.uri}>)` : '';
 
       if (!this.currentTrack) {
         this.currentTrack = trackToPlay;
         await this.startPlayback(trackToPlay);
         await this.sendReply(
           channelId,
-          `▶️ Memutar: **${trackToPlay.info.title}** oleh **${trackToPlay.info.author}** [${formatDuration(trackToPlay.info.length)}]`
+          `🎶 **Sedang Diputar**\n> **${trackToPlay.info.title}**\n> *${trackToPlay.info.author}* • \`${durationStr}\`${linkStr}`
         );
       } else {
         this.queue.push(trackToPlay);
         await this.sendReply(
           channelId,
-          `➕ Ditambahkan ke antrean (#${this.queue.length}): **${trackToPlay.info.title}** [${formatDuration(trackToPlay.info.length)}]`
+          `📥 **Ditambahkan ke Antrean** \`(#${this.queue.length})\`\n> **${trackToPlay.info.title}**\n> *${trackToPlay.info.author}* • \`${durationStr}\``
         );
       }
     } catch (err) {
       logger.error(`Error handling play command: ${(err as Error).message}`);
-      await this.sendReply(channelId, `❌ Gagal memuat lagu: ${(err as Error).message}`);
+      await this.sendReply(channelId, `❌ **Gagal** — ${(err as Error).message}`);
     }
   }
 
@@ -332,9 +340,11 @@ export class MusicService {
     if (this.queue.length > 0) {
       this.currentTrack = this.queue.shift()!;
       if (this.lastChannelId) {
+        const durationStr = formatDuration(this.currentTrack.info.length);
+        const linkStr = this.currentTrack.info.uri ? ` • [Tautan](<${this.currentTrack.info.uri}>)` : '';
         await this.sendReply(
           this.lastChannelId,
-          `🎶 Sekarang memutar: **${this.currentTrack.info.title}** oleh **${this.currentTrack.info.author}** [${formatDuration(this.currentTrack.info.length)}]`
+          `🎶 **Sekarang Memutar**\n> **${this.currentTrack.info.title}**\n> *${this.currentTrack.info.author}* • \`${durationStr}\`${linkStr}`
         );
       }
       await this.startPlayback(this.currentTrack);
@@ -346,9 +356,11 @@ export class MusicService {
       if (recommendation) {
         this.currentTrack = recommendation;
         if (this.lastChannelId) {
+          const durationStr = formatDuration(recommendation.info.length);
+          const linkStr = recommendation.info.uri ? ` • [Tautan](<${recommendation.info.uri}>)` : '';
           await this.sendReply(
             this.lastChannelId,
-            `🔄 [Autoplay] Memutar rekomendasi: **${recommendation.info.title}** oleh **${recommendation.info.author}** [${formatDuration(recommendation.info.length)}]`
+            `🔄 **Autoplay Rekomendasi**\n> **${recommendation.info.title}**\n> *${recommendation.info.author}* • \`${durationStr}\`${linkStr}`
           );
         }
         await this.startPlayback(recommendation);
@@ -362,7 +374,7 @@ export class MusicService {
     this.client.updatePlayer(this.config.guildId, { track: { encoded: null } }).catch(() => {});
     logger.info('Queue finished. Playback stopped.');
     if (this.lastChannelId) {
-      await this.sendReply(this.lastChannelId, '⏹️ Antrean lagu telah selesai.');
+      await this.sendReply(this.lastChannelId, '⏹️ **Selesai** — Seluruh antrean lagu telah selesai diputar.');
     }
   }
 
@@ -413,10 +425,15 @@ export class MusicService {
 
   private async handleAutoplayCommand(channelId: string): Promise<void> {
     this.isAutoplay = !this.isAutoplay;
-    const status = this.isAutoplay
-      ? '✅ **Aktif** (lagu serupa akan otomatis diputar saat antrean habis)'
-      : '❌ **Nonaktif**';
-    await this.sendReply(channelId, `🔁 Autoplay sekarang: ${status}`);
+    const statusText = this.isAutoplay ? 'Aktif' : 'Nonaktif';
+    const descText = this.isAutoplay
+      ? 'Lagu rekomendasi serupa akan otomatis diputar saat antrean habis.'
+      : 'Pemutaran akan berhenti setelah seluruh antrean selesai.';
+
+    await this.sendReply(
+      channelId,
+      `🔁 **Autoplay** — Status: **${statusText}**\n> *${descText}*`
+    );
 
     // If nothing is currently playing and autoplay is turned on, trigger recommendation immediately
     if (this.isAutoplay && !this.currentTrack && this.lastTrack) {
@@ -432,108 +449,106 @@ export class MusicService {
     try {
       await this.client.updatePlayer(this.config.guildId, { track: { encoded: null } });
       this.voiceManager.restoreMute();
-      await this.sendReply(channelId, '⏹️ Pemutaran dihentikan dan antrean telah dibersihkan.');
+      await this.sendReply(channelId, '⏹️ **Dihentikan** — Pemutaran dihentikan dan antrean telah dibersihkan.');
     } catch (err) {
-      await this.sendReply(channelId, `❌ Gagal menghentikan pemutaran: ${(err as Error).message}`);
+      await this.sendReply(channelId, `❌ **Gagal** — ${(err as Error).message}`);
     }
   }
 
   private async handleSkipCommand(channelId: string): Promise<void> {
     if (!this.currentTrack) {
-      await this.sendReply(channelId, '⚠️ Tidak ada lagu yang sedang diputar.');
+      await this.sendReply(channelId, '⚠️ **Perhatian** — Tidak ada lagu yang sedang diputar.');
       return;
     }
 
     const skippedTitle = this.currentTrack.info.title;
-    await this.sendReply(channelId, `⏭️ Melewati: **${skippedTitle}**`);
+    await this.sendReply(channelId, `⏭️ **Dilewati**\n> **${skippedTitle}**`);
     await this.playNext();
   }
 
   private async handlePauseCommand(channelId: string): Promise<void> {
     if (!this.currentTrack) {
-      await this.sendReply(channelId, '⚠️ Tidak ada lagu yang sedang diputar.');
+      await this.sendReply(channelId, '⚠️ **Perhatian** — Tidak ada lagu yang sedang diputar.');
       return;
     }
 
     if (this.isPaused) {
-      await this.sendReply(channelId, '⚠️ Lagu sudah dalam keadaan jeda (paused).');
+      await this.sendReply(channelId, '⚠️ **Perhatian** — Lagu sudah dalam keadaan jeda.');
       return;
     }
 
     try {
       await this.client.updatePlayer(this.config.guildId, { paused: true });
       this.isPaused = true;
-      await this.sendReply(channelId, '⏸️ Pemutaran dijeda.');
+      await this.sendReply(channelId, '⏸️ **Dijeda** — Pemutaran lagu dijeda sementara.');
     } catch (err) {
-      await this.sendReply(channelId, `❌ Gagal menjeda lagu: ${(err as Error).message}`);
+      await this.sendReply(channelId, `❌ **Gagal** — ${(err as Error).message}`);
     }
   }
 
   private async handleResumeCommand(channelId: string): Promise<void> {
     if (!this.currentTrack) {
-      await this.sendReply(channelId, '⚠️ Tidak ada lagu yang sedang diputar.');
+      await this.sendReply(channelId, '⚠️ **Perhatian** — Tidak ada lagu yang sedang diputar.');
       return;
     }
 
     if (!this.isPaused) {
-      await this.sendReply(channelId, '⚠️ Lagu sedang berjalan.');
+      await this.sendReply(channelId, '⚠️ **Perhatian** — Lagu sedang berjalan aktif.');
       return;
     }
 
     try {
       await this.client.updatePlayer(this.config.guildId, { paused: false });
       this.isPaused = false;
-      await this.sendReply(channelId, '▶️ Pemutaran dilanjutkan.');
+      await this.sendReply(channelId, '▶️ **Dilanjutkan** — Melanjutkan pemutaran musik.');
     } catch (err) {
-      await this.sendReply(channelId, `❌ Gagal melanjutkan lagu: ${(err as Error).message}`);
+      await this.sendReply(channelId, `❌ **Gagal** — ${(err as Error).message}`);
     }
   }
 
   private async handleQueueCommand(channelId: string): Promise<void> {
     if (!this.currentTrack && this.queue.length === 0) {
-      await this.sendReply(channelId, '📭 Antrean kosong.');
+      await this.sendReply(channelId, '📭 **Antrean Kosong** — Belum ada lagu di dalam antrean.');
       return;
     }
 
-    let msg = '📋 **Antrean Musik:**\n';
+    let msg = '📋 **Antrean Musik**\n';
     if (this.currentTrack) {
-      msg += `▶️ **Sedang Diputar:** ${this.currentTrack.info.title} [${formatDuration(this.currentTrack.info.length)}]\n`;
+      msg += `> ▶️ **Sedang Diputar:** **${this.currentTrack.info.title}** (\`${formatDuration(this.currentTrack.info.length)}\`)\n`;
     }
 
     if (this.queue.length > 0) {
-      msg += '\n**Lagu Berikutnya:**\n';
+      msg += '\n**Daftar Antrean:**\n';
       const maxDisplay = 10;
       const displayQueue = this.queue.slice(0, maxDisplay);
       displayQueue.forEach((t, i) => {
-        msg += `${i + 1}. **${t.info.title}** [${formatDuration(t.info.length)}]` + '\n';
+        msg += `\`${String(i + 1).padStart(2, ' ')}.\` **${t.info.title}** — \`${formatDuration(t.info.length)}\`\n`;
       });
       if (this.queue.length > maxDisplay) {
-        msg += `...dan ${this.queue.length - maxDisplay} lagu lainnya.\n`;
+        msg += `*...dan ${this.queue.length - maxDisplay} lagu lainnya.*\n`;
       }
     }
 
-    if (this.isAutoplay) {
-      msg += `\n🔁 *Autoplay aktif (lagu rekomendasi otomatis diputar saat antrean habis).*`;
-    }
+    msg += `\n-# Total antrean: ${this.queue.length} lagu • Autoplay: ${this.isAutoplay ? 'Aktif' : 'Nonaktif'}`;
 
     await this.sendReply(channelId, msg);
   }
 
   private async handleNowPlayingCommand(channelId: string): Promise<void> {
     if (!this.currentTrack) {
-      await this.sendReply(channelId, '⚠️ Tidak ada lagu yang sedang diputar.');
+      await this.sendReply(channelId, '⚠️ **Perhatian** — Tidak ada lagu yang sedang diputar saat ini.');
       return;
     }
 
     const { title, author, length, uri } = this.currentTrack.info;
-    const status = this.isPaused ? '⏸️ Dijeda' : '▶️ Sedang Diputar';
-    let text = `${status}: **${title}** oleh **${author}**\nDurasi: [${formatDuration(length)}]`;
-    if (uri) {
-      text += `\nTautan: <${uri}>`;
-    }
-    if (this.isAutoplay) {
-      text += `\n🔁 *Autoplay: Aktif*`;
-    }
+    const status = this.isPaused ? '⏸️ **Dijeda**' : '▶️ **Sedang Diputar**';
+    const linkStr = uri ? ` • [Tautan](<${uri}>)` : '';
+
+    const text = `${status}\n` +
+      `> **${title}**\n` +
+      `> Artis: *${author}*\n` +
+      `> Durasi: \`${formatDuration(length)}\`${linkStr}\n` +
+      `-# Autoplay: ${this.isAutoplay ? 'Aktif' : 'Nonaktif'}`;
 
     await this.sendReply(channelId, text);
   }
@@ -541,32 +556,34 @@ export class MusicService {
   private async handleVolumeCommand(channelId: string, query: string): Promise<void> {
     const vol = parseInt(query, 10);
     if (Number.isNaN(vol) || vol < 0 || vol > 100) {
-      await this.sendReply(channelId, `❌ Masukkan angka volume antara 0 - 100. Contoh: \`${this.config.music.prefix}volume 80\``);
+      await this.sendReply(
+        channelId,
+        `⚠️ **Format Salah** — Masukkan angka volume antara 0 - 100.\n> Contoh: \`${this.config.music.prefix}volume 80\``
+      );
       return;
     }
 
     this.volume = vol;
     try {
       await this.client.updatePlayer(this.config.guildId, { volume: vol });
-      await this.sendReply(channelId, `🔊 Volume diatur ke **${vol}%**`);
+      await this.sendReply(channelId, `🔊 **Volume** — Diatur ke \`${vol}%\``);
     } catch (err) {
-      await this.sendReply(channelId, `❌ Gagal mengatur volume: ${(err as Error).message}`);
+      await this.sendReply(channelId, `❌ **Gagal** — ${(err as Error).message}`);
     }
   }
 
   private async handleHelpCommand(channelId: string): Promise<void> {
     const p = this.config.music.prefix;
-    const help = `🎵 **Daftar Perintah Musik:**\n` +
-      `• \`${p}play <judul/url>\` atau \`${p}p\` — Putar lagu atau masukkan ke antrean\n` +
-      `• \`${p}autoplay\` atau \`${p}ap\` — Aktifkan/nonaktifkan pemutaran lagu rekomendasi otomatis\n` +
-      `• \`${p}stop\` — Hentikan musik & bersihkan antrean\n` +
-      `• \`${p}skip\` atau \`${p}s\` — Lewati lagu yang sedang diputar\n` +
-      `• \`${p}pause\` — Jeda pemutaran lagu\n` +
-      `• \`${p}resume\` — Lanjutkan pemutaran lagu\n` +
-      `• \`${p}queue\` atau \`${p}q\` — Lihat daftar antrean lagu\n` +
-      `• \`${p}nowplaying\` atau \`${p}np\` — Lihat info lagu yang sedang diputar\n` +
-      `• \`${p}volume <0-100>\` — Atur volume pemutaran\n` +
-      `• \`${p}help\` — Tampilkan pesan bantuan ini`;
+    const help = `🎵 **Panduan Perintah Musik** (\`Prefix: ${p}\`)\n` +
+      `> \`${p}play <judul/url>\` (alias: \`${p}p\`) — Putar lagu atau tambah ke antrean\n` +
+      `> \`${p}autoplay\` (alias: \`${p}ap\`) — Nyalakan/matikan pemutaran rekomendasi otomatis\n` +
+      `> \`${p}skip\` (alias: \`${p}s\`) — Lewati lagu yang sedang diputar\n` +
+      `> \`${p}pause\` / \`${p}resume\` — Jeda atau lanjutkan pemutaran lagu\n` +
+      `> \`${p}queue\` (alias: \`${p}q\`) — Tampilkan daftar antrean lagu\n` +
+      `> \`${p}nowplaying\` (alias: \`${p}np\`) — Detail info lagu saat ini\n` +
+      `> \`${p}volume <0-100>\` (alias: \`${p}vol\`) — Atur tingkat volume suara\n` +
+      `> \`${p}stop\` — Hentikan lagu dan bersihkan seluruh antrean\n` +
+      `> \`${p}help\` — Tampilkan daftar bantuan ini`;
 
     await this.sendReply(channelId, help);
   }
