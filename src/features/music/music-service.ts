@@ -652,7 +652,7 @@ export class MusicService {
           const trackTitle = formatTrackLink(recommendation.info.title, recommendation.info.uri);
           await this.sendReply(
             this.lastChannelId,
-            `> ### 📻 Autoplay Rekomendasi\n` +
+            `> ### 🎶 Sekarang Memutar\n` +
             `> **${trackTitle}**\n` +
             `> 👤 \`${recommendation.info.author}\` • ⏱️ \`${durationStr}\``
           );
