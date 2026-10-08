@@ -4,6 +4,8 @@ services:
     container_name: always-voice-bot
     restart: unless-stopped
     init: true
+    depends_on:
+      - nodelink
     environment:
       - TZ=Asia/Jakarta
       - TOKEN=${TOKEN:-}
@@ -22,3 +24,19 @@ services:
       - REPLY_MESSAGE=${REPLY_MESSAGE:-yes}
       - UNDEAFEN_MIN_SECONDS=${UNDEAFEN_MIN_SECONDS:-300}
       - UNDEAFEN_MAX_SECONDS=${UNDEAFEN_MAX_SECONDS:-900}
+
+      - MUSIC_ENABLED=${MUSIC_ENABLED:-True}
+      - MUSIC_PREFIX=${MUSIC_PREFIX:-!}
+      - NODELINK_HOST=${NODELINK_HOST:-nodelink}
+      - NODELINK_PORT=${NODELINK_PORT:-2333}
+      - NODELINK_PASSWORD=${NODELINK_PASSWORD:-youshallnotpass}
+
+  nodelink:
+    image: performanc/nodelink:latest
+    container_name: nodelink
+    restart: unless-stopped
+    ports:
+      - "2333:2333"
+    environment:
+      - NODELINK_PORT=2333
+      - NODELINK_PASSWORD=youshallnotpass

@@ -55,6 +55,14 @@ export function loadConfig(): BotConfig {
       undeafenMinSeconds: parseNumber(process.env.UNDEAFEN_MIN_SECONDS, 300),
       undeafenMaxSeconds: parseNumber(process.env.UNDEAFEN_MAX_SECONDS, 900),
     },
+    music: {
+      enabled: parseBoolean(process.env.MUSIC_ENABLED, true),
+      prefix: (process.env.MUSIC_PREFIX || '!').trim(),
+      nodelinkHost: process.env.NODELINK_HOST || 'localhost',
+      nodelinkPort: parseNumber(process.env.NODELINK_PORT, 2333),
+      nodelinkPassword: process.env.NODELINK_PASSWORD || 'youshallnotpass',
+      nodelinkSecure: parseBoolean(process.env.NODELINK_SECURE, false),
+    },
   };
 }
 

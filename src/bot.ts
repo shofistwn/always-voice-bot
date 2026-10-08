@@ -3,6 +3,7 @@ import { GatewayClient } from './gateway/gateway-client.js';
 import { VoiceManager } from './voice/voice-manager.js';
 import { AutoReplyService } from './features/auto-reply.js';
 import { StreamWatcherService } from './features/stream-watcher.js';
+import { MusicService } from './features/music/music-service.js';
 import { EntityCache } from './cache/entity-cache.js';
 import { createLogger } from './logger/index.js';
 
@@ -15,6 +16,7 @@ export class AlwaysVoiceBot {
   private readonly voiceManager: VoiceManager;
   private readonly autoReply: AutoReplyService;
   private readonly streamWatcher: StreamWatcherService;
+  private readonly musicService?: MusicService;
 
   private botUserId: string | null = null;
   private botUsername: string = 'Unknown';
@@ -26,6 +28,10 @@ export class AlwaysVoiceBot {
     this.voiceManager = new VoiceManager(config, this.gateway, this.cache);
     this.autoReply = new AutoReplyService(config, this.cache);
     this.streamWatcher = new StreamWatcherService(config, this.gateway, this.cache);
+
+    if (config.music.enabled) {
+      this.musicService = new MusicService(config, this.voiceManager, this.cache);
+    }
 
     this.registerEventListeners();
   }
@@ -39,6 +45,8 @@ export class AlwaysVoiceBot {
       this.voiceManager.setInVoice(false);
       this.voiceManager.resetJoinAttempt();
       this.voiceManager.joinVoice();
+
+      this.musicService?.start(data.user.id);
     });
 
     this.gateway.on('guildCreate', (data) => {
@@ -51,11 +59,17 @@ export class AlwaysVoiceBot {
       this.cache.handleVoiceStateUpdate(data);
       this.voiceManager.handleVoiceStateUpdate(data, this.botUserId);
       this.streamWatcher.handleVoiceStateUpdate(data, this.botUserId);
+      this.musicService?.handleVoiceStateUpdate(data, this.botUserId);
+    });
+
+    this.gateway.on('voiceServerUpdate', (data) => {
+      this.musicService?.handleVoiceServerUpdate(data);
     });
 
     this.gateway.on('messageCreate', (data) => {
       this.cache.handleMessageCreate(data);
       this.autoReply.handleMessage(data, this.botUserId);
+      this.musicService?.handleMessage(data, this.botUserId);
     });
 
     this.gateway.on('streamCreate', (data) => {
@@ -81,6 +95,7 @@ export class AlwaysVoiceBot {
 
   public stop(): void {
     logger.info('Stopping AlwaysVoiceBot...');
+    this.musicService?.destroy();
     this.streamWatcher.destroy();
     this.autoReply.destroy();
     this.voiceManager.destroy();
