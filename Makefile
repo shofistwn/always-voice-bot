@@ -87,7 +87,7 @@ clean:
 	@echo "Cleaning up containers, images, and volumes..."
 	$(COMPOSE) down -v
 	$(CONTAINER_CLI) rmi always-voice 2>/dev/null || true
-	$(CONTAINER_CLI) rmi performanc/nodelink:latest 2>/dev/null || true
+	$(CONTAINER_CLI) rmi docker.io/performanc/nodelink:latest 2>/dev/null || true
 	@echo "Cleanup complete!"
 
 # Show container status

@@ -32,7 +32,7 @@ services:
       - NODELINK_PASSWORD=${NODELINK_PASSWORD:-youshallnotpass}
 
   nodelink:
-    image: performanc/nodelink:latest
+    image: docker.io/performanc/nodelink:latest
     container_name: nodelink
     restart: unless-stopped
     ports:
