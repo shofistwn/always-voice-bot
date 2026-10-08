@@ -42,9 +42,13 @@ export class MusicService {
   private voiceServerData: VoiceServerUpdateData | null = null;
   private queue: NodeLinkTrack[] = [];
   private currentTrack: NodeLinkTrack | null = null;
+  private lastTrack: NodeLinkTrack | null = null;
   private isPaused: boolean = false;
+  private isAutoplay: boolean = false;
   private volume: number = 100;
   private isVoiceConnectedToNode: boolean = false;
+  private lastChannelId: string | null = null;
+  private readonly playedHistory: Set<string> = new Set();
 
   constructor(config: BotConfig, voiceManager: VoiceManager, cache?: EntityCache) {
     this.config = config;
@@ -152,6 +156,8 @@ export class MusicService {
 
     if (!isCommand || !raw) return;
 
+    this.lastChannelId = message.channel_id;
+
     const [command, ...args] = raw.split(/\s+/);
     const cmd = command.toLowerCase();
     const query = args.join(' ');
@@ -194,6 +200,11 @@ export class MusicService {
       case 'volume':
       case 'vol':
         await this.handleVolumeCommand(message.channel_id, query);
+        break;
+
+      case 'autoplay':
+      case 'ap':
+        await this.handleAutoplayCommand(message.channel_id);
         break;
 
       case 'help':
@@ -252,7 +263,7 @@ export class MusicService {
           );
 
           if (!this.currentTrack) {
-            this.playNext();
+            await this.playNext();
           }
           return;
         }
@@ -298,6 +309,13 @@ export class MusicService {
       // Ensure bot is unmuted so voice can be heard
       this.voiceManager.setMute(false);
 
+      this.lastTrack = track;
+      this.playedHistory.add(track.info.identifier);
+      if (this.playedHistory.size > 50) {
+        const first = this.playedHistory.values().next().value;
+        if (first) this.playedHistory.delete(first);
+      }
+
       await this.client.updatePlayer(this.config.guildId, {
         track: { encoded: track.encoded },
         volume: this.volume,
@@ -306,20 +324,94 @@ export class MusicService {
       this.isPaused = false;
     } catch (err) {
       logger.error(`Failed to start playback: ${(err as Error).message}`);
-      this.playNext();
+      await this.playNext();
     }
   }
 
-  private playNext(): void {
+  private async playNext(): Promise<void> {
     if (this.queue.length > 0) {
       this.currentTrack = this.queue.shift()!;
-      this.startPlayback(this.currentTrack);
-    } else {
-      this.currentTrack = null;
-      this.isPaused = false;
-      this.voiceManager.restoreMute();
-      this.client.updatePlayer(this.config.guildId, { track: { encoded: null } }).catch(() => {});
-      logger.info('Queue finished. Playback stopped.');
+      await this.startPlayback(this.currentTrack);
+      return;
+    }
+
+    if (this.isAutoplay && this.lastTrack) {
+      const recommendation = await this.fetchRecommendation(this.lastTrack);
+      if (recommendation) {
+        this.currentTrack = recommendation;
+        if (this.lastChannelId) {
+          await this.sendReply(
+            this.lastChannelId,
+            `🔄 [Autoplay] Memutar rekomendasi: **${recommendation.info.title}** oleh **${recommendation.info.author}** [${formatDuration(recommendation.info.length)}]`
+          );
+        }
+        await this.startPlayback(recommendation);
+        return;
+      }
+    }
+
+    this.currentTrack = null;
+    this.isPaused = false;
+    this.voiceManager.restoreMute();
+    this.client.updatePlayer(this.config.guildId, { track: { encoded: null } }).catch(() => {});
+    logger.info('Queue finished. Playback stopped.');
+  }
+
+  private async fetchRecommendation(previousTrack: NodeLinkTrack): Promise<NodeLinkTrack | null> {
+    logger.info(`Fetching autoplay recommendation for "${previousTrack.info.title}"...`);
+    try {
+      // 1. Try YouTube Mix radio if an identifier exists
+      if (previousTrack.info.identifier) {
+        const mixUrl = `https://www.youtube.com/watch?v=${previousTrack.info.identifier}&list=RD${previousTrack.info.identifier}`;
+        const res = await this.client.loadTracks(mixUrl);
+        if (res.loadType === 'playlist') {
+          const playlist = res.data as NodeLinkPlaylistData;
+          const candidate = (playlist.tracks || []).find(
+            (t) => !this.playedHistory.has(t.info.identifier)
+          );
+          if (candidate) {
+            logger.info(`Found YouTube Mix recommendation: "${candidate.info.title}"`);
+            return candidate;
+          }
+        }
+      }
+
+      // 2. Fallback: Search related by author & title
+      const searchQuery = `search:${previousTrack.info.author} ${previousTrack.info.title}`;
+      const searchRes = await this.client.loadTracks(searchQuery);
+      if (searchRes.loadType === 'playlist') {
+        const playlist = searchRes.data as NodeLinkPlaylistData;
+        const candidate = (playlist.tracks || []).find(
+          (t) => !this.playedHistory.has(t.info.identifier)
+        );
+        if (candidate) {
+          logger.info(`Found search recommendation: "${candidate.info.title}"`);
+          return candidate;
+        }
+      } else if (searchRes.loadType === 'search') {
+        const tracks = Array.isArray(searchRes.data) ? (searchRes.data as NodeLinkTrack[]) : [];
+        const candidate = tracks.find((t) => !this.playedHistory.has(t.info.identifier));
+        if (candidate) {
+          logger.info(`Found search recommendation: "${candidate.info.title}"`);
+          return candidate;
+        }
+      }
+    } catch (err) {
+      logger.warn(`Failed to fetch autoplay recommendation: ${(err as Error).message}`);
+    }
+    return null;
+  }
+
+  private async handleAutoplayCommand(channelId: string): Promise<void> {
+    this.isAutoplay = !this.isAutoplay;
+    const status = this.isAutoplay
+      ? '✅ **Aktif** (lagu serupa akan otomatis diputar saat antrean habis)'
+      : '❌ **Nonaktif**';
+    await this.sendReply(channelId, `🔁 Autoplay sekarang: ${status}`);
+
+    // If nothing is currently playing and autoplay is turned on, trigger recommendation immediately
+    if (this.isAutoplay && !this.currentTrack && this.lastTrack) {
+      await this.playNext();
     }
   }
 
@@ -345,7 +437,7 @@ export class MusicService {
 
     const skippedTitle = this.currentTrack.info.title;
     await this.sendReply(channelId, `⏭️ Melewati: **${skippedTitle}**`);
-    this.playNext();
+    await this.playNext();
   }
 
   private async handlePauseCommand(channelId: string): Promise<void> {
@@ -411,6 +503,10 @@ export class MusicService {
       }
     }
 
+    if (this.isAutoplay) {
+      msg += `\n🔁 *Autoplay aktif (lagu rekomendasi otomatis diputar saat antrean habis).*`;
+    }
+
     await this.sendReply(channelId, msg);
   }
 
@@ -425,6 +521,9 @@ export class MusicService {
     let text = `${status}: **${title}** oleh **${author}**\nDurasi: [${formatDuration(length)}]`;
     if (uri) {
       text += `\nTautan: <${uri}>`;
+    }
+    if (this.isAutoplay) {
+      text += `\n🔁 *Autoplay: Aktif*`;
     }
 
     await this.sendReply(channelId, text);
@@ -450,6 +549,7 @@ export class MusicService {
     const p = this.config.music.prefix;
     const help = `🎵 **Daftar Perintah Musik:**\n` +
       `• \`${p}play <judul/url>\` atau \`${p}p\` — Putar lagu atau masukkan ke antrean\n` +
+      `• \`${p}autoplay\` atau \`${p}ap\` — Aktifkan/nonaktifkan pemutaran lagu rekomendasi otomatis\n` +
       `• \`${p}stop\` — Hentikan musik & bersihkan antrean\n` +
       `• \`${p}skip\` atau \`${p}s\` — Lewati lagu yang sedang diputar\n` +
       `• \`${p}pause\` — Jeda pemutaran lagu\n` +
