@@ -229,29 +229,41 @@ export class MusicService {
         return;
       }
 
+      let trackToPlay: NodeLinkTrack | null = null;
+
       if (result.loadType === 'playlist') {
         const playlist = result.data as NodeLinkPlaylistData;
         const tracks = playlist.tracks || [];
         if (tracks.length === 0) {
-          await this.sendReply(channelId, '❌ Playlist kosong.');
+          await this.sendReply(channelId, '❌ Lagu tidak ditemukan.');
           return;
         }
 
-        this.queue.push(...tracks);
-        await this.sendReply(channelId, `🎶 Menambahkan **${tracks.length} lagu** dari playlist **${playlist.info.name}** ke antrean.`);
+        const isRealPlaylist =
+          isUrl &&
+          /(playlist|album|sets|list=)/i.test(query) &&
+          !playlist.info.name.toLowerCase().includes('search results');
 
-        if (!this.currentTrack) {
-          this.playNext();
+        if (isRealPlaylist) {
+          this.queue.push(...tracks);
+          await this.sendReply(
+            channelId,
+            `🎶 Menambahkan **${tracks.length} lagu** dari playlist **${playlist.info.name}** ke antrean.`
+          );
+
+          if (!this.currentTrack) {
+            this.playNext();
+          }
+          return;
         }
-        return;
-      }
 
-      // Single track or search result
-      let trackToPlay: NodeLinkTrack | null = null;
-      if (result.loadType === 'track') {
+        // NodeLink returns search results wrapped as a playlist ("Search results for: ...")
+        // Pick only the first / top result
+        trackToPlay = tracks[0] ?? null;
+      } else if (result.loadType === 'track') {
         trackToPlay = result.data as NodeLinkTrack;
       } else if (result.loadType === 'search') {
-        const tracks = result.data as NodeLinkTrack[];
+        const tracks = Array.isArray(result.data) ? (result.data as NodeLinkTrack[]) : [];
         trackToPlay = tracks[0] ?? null;
       }
 
