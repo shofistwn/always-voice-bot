@@ -25,11 +25,13 @@ export class NodeLinkClient extends EventEmitter {
   private isDestroyed: boolean = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private activeHost: string;
+  private activePort: number;
 
   constructor(config: MusicConfig) {
     super();
     this.config = config;
     this.activeHost = config.nodelinkHost;
+    this.activePort = config.nodelinkPort;
   }
 
   public getSessionId(): string | null {
@@ -42,12 +44,12 @@ export class NodeLinkClient extends EventEmitter {
 
   public getRestBaseUrl(): string {
     const protocol = this.config.nodelinkSecure ? 'https' : 'http';
-    return `${protocol}://${this.activeHost}:${this.config.nodelinkPort}/v4`;
+    return `${protocol}://${this.activeHost}:${this.activePort}/v4`;
   }
 
   public getWsUrl(): string {
     const protocol = this.config.nodelinkSecure ? 'wss' : 'ws';
-    return `${protocol}://${this.activeHost}:${this.config.nodelinkPort}/v4/websocket`;
+    return `${protocol}://${this.activeHost}:${this.activePort}/v4/websocket`;
   }
 
   public start(botUserId: string): void {
@@ -60,7 +62,7 @@ export class NodeLinkClient extends EventEmitter {
     if (!this.botUserId || this.isDestroyed) return;
 
     const wsUrl = this.getWsUrl();
-    logger.info(`Connecting to NodeLink server at ${this.activeHost}:${this.config.nodelinkPort}...`);
+    logger.info(`Connecting to NodeLink server at ${this.activeHost}:${this.activePort}...`);
 
     try {
       this.ws = new WebSocket(wsUrl, {
@@ -94,6 +96,13 @@ export class NodeLinkClient extends EventEmitter {
           this.activeHost = 'localhost';
           return;
         }
+
+        if (this.activePort === 2333 && (err.message.includes('ECONNRESET') || err.message.includes('ECONNREFUSED'))) {
+          logger.warn('Port 2333 connection failed. Falling back to default NodeLink port 3000...');
+          this.activePort = 3000;
+          return;
+        }
+
         logger.error(`Connection error: ${err.message}`);
       });
     } catch (error) {

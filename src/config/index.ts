@@ -59,7 +59,7 @@ export function loadConfig(): BotConfig {
       enabled: parseBoolean(process.env.MUSIC_ENABLED, true),
       prefix: (process.env.MUSIC_PREFIX || '!').trim(),
       nodelinkHost: process.env.NODELINK_HOST || 'localhost',
-      nodelinkPort: parseNumber(process.env.NODELINK_PORT, 2333),
+      nodelinkPort: parseNumber(process.env.NODELINK_PORT, 3000),
       nodelinkPassword: process.env.NODELINK_PASSWORD || 'youshallnotpass',
       nodelinkSecure: parseBoolean(process.env.NODELINK_SECURE, false),
     },

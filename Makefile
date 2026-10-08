@@ -36,13 +36,13 @@ install:
 dev:
 	@echo "Ensuring NodeLink audio node is running..."
 	$(COMPOSE) up -d nodelink
-	NODELINK_HOST=localhost npm run dev
+	NODELINK_HOST=localhost NODELINK_PORT=3000 npm run dev
 
 # Start only NodeLink audio server
 nodelink:
 	@echo "Starting NodeLink audio node using $(COMPOSE)..."
 	$(COMPOSE) up -d nodelink
-	@echo "NodeLink started on port 2333."
+	@echo "NodeLink started on port 3000 (and mapped 2333)."
 
 # Build container image & pull NodeLink
 build:

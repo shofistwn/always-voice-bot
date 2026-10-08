@@ -28,7 +28,7 @@ services:
       - MUSIC_ENABLED=${MUSIC_ENABLED:-True}
       - MUSIC_PREFIX=${MUSIC_PREFIX:-!}
       - NODELINK_HOST=${NODELINK_HOST:-nodelink}
-      - NODELINK_PORT=${NODELINK_PORT:-2333}
+      - NODELINK_PORT=${NODELINK_PORT:-3000}
       - NODELINK_PASSWORD=${NODELINK_PASSWORD:-youshallnotpass}
 
   nodelink:
@@ -36,7 +36,8 @@ services:
     container_name: nodelink
     restart: unless-stopped
     ports:
-      - "2333:2333"
+      - "3000:3000"
+      - "2333:3000"
     environment:
-      - NODELINK_PORT=2333
+      - NODELINK_PORT=3000
       - NODELINK_PASSWORD=youshallnotpass
