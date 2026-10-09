@@ -210,6 +210,7 @@ export class MusicService {
   private volume: number = 100;
   private isVoiceConnectedToNode: boolean = false;
   private lastChannelId: string | null = null;
+  private activePlayingMessage: { channelId: string; messageId: string } | null = null;
   private readonly playedHistory: Set<string> = new Set();
   private readonly pendingSearches: Map<string, PendingSearch> = new Map();
 
@@ -480,7 +481,7 @@ export class MusicService {
       this.currentTrack = track;
       this.loopCount = null;
       await this.startPlayback(track);
-      await this.sendReply(channelId, fmt.playing(track));
+      await this.notifyNowPlaying(channelId, fmt.playing(track));
     } else {
       this.queue.push(track);
       await this.sendReply(channelId, fmt.queued(track, this.queue.length));
@@ -711,7 +712,7 @@ export class MusicService {
       if (this.loopCount === Infinity) {
         logger.info(`Looping track (infinite): "${this.currentTrack.info.title}"`);
         if (this.lastChannelId) {
-          await this.sendReply(this.lastChannelId, fmt.looping(this.currentTrack, Infinity));
+          await this.notifyNowPlaying(this.lastChannelId, fmt.looping(this.currentTrack, Infinity));
         }
         await this.startPlayback(this.currentTrack);
         return;
@@ -725,7 +726,7 @@ export class MusicService {
         }
         logger.info(`Looping track (${remaining}x remaining): "${this.currentTrack.info.title}"`);
         if (this.lastChannelId) {
-          await this.sendReply(this.lastChannelId, fmt.looping(this.currentTrack, remaining));
+          await this.notifyNowPlaying(this.lastChannelId, fmt.looping(this.currentTrack, remaining));
         }
         await this.startPlayback(this.currentTrack);
         return;
@@ -736,7 +737,7 @@ export class MusicService {
       this.currentTrack = this.queue.shift()!;
       this.loopCount = null;
       if (this.lastChannelId) {
-        await this.sendReply(this.lastChannelId, fmt.playing(this.currentTrack));
+        await this.notifyNowPlaying(this.lastChannelId, fmt.playing(this.currentTrack));
       }
       await this.startPlayback(this.currentTrack);
       return;
@@ -748,13 +749,14 @@ export class MusicService {
         this.currentTrack = recommendation;
         this.loopCount = null;
         if (this.lastChannelId) {
-          await this.sendReply(this.lastChannelId, fmt.playing(recommendation));
+          await this.notifyNowPlaying(this.lastChannelId, fmt.playing(recommendation));
         }
         await this.startPlayback(recommendation);
         return;
       }
     }
 
+    await this.cleanupActivePlayingMessage();
     this.currentTrack = null;
     this.loopCount = null;
     this.isPaused = false;
@@ -882,6 +884,7 @@ export class MusicService {
     this.currentTrack = null;
     this.loopCount = null;
     this.isPaused = false;
+    await this.cleanupActivePlayingMessage();
 
     try {
       await this.client.updatePlayer(this.config.guildId, { track: { encoded: null } });
@@ -925,6 +928,7 @@ export class MusicService {
     this.currentTrack = targetTrack;
     this.loopCount = null;
 
+    await this.cleanupActivePlayingMessage();
     await this.sendReply(channelId, fmt.jumped(targetTrack, idx));
     await this.startPlayback(targetTrack);
   }
@@ -1134,6 +1138,24 @@ export class MusicService {
     }
   }
 
+  /** Cleans up the previous "now playing" message to prevent chat clutter. */
+  private async cleanupActivePlayingMessage(): Promise<void> {
+    if (this.activePlayingMessage) {
+      const { channelId, messageId } = this.activePlayingMessage;
+      this.activePlayingMessage = null;
+      await this.deleteMessage(channelId, messageId);
+    }
+  }
+
+  /** Sends a "now playing" message and automatically deletes the previous one. */
+  private async notifyNowPlaying(channelId: string, content: string): Promise<void> {
+    await this.cleanupActivePlayingMessage();
+    const messageId = await this.sendReply(channelId, content);
+    if (messageId) {
+      this.activePlayingMessage = { channelId, messageId };
+    }
+  }
+
   private async postMessage(channelId: string, content: string): Promise<string | null> {
     try {
       const controller = new AbortController();
@@ -1193,6 +1215,10 @@ export class MusicService {
       if (pending.messageId) {
         this.deleteMessage(pending.channelId, pending.messageId).catch(() => {});
       }
+    }
+    if (this.activePlayingMessage) {
+      this.deleteMessage(this.activePlayingMessage.channelId, this.activePlayingMessage.messageId).catch(() => {});
+      this.activePlayingMessage = null;
     }
     this.pendingSearches.clear();
     this.client.destroy();
