@@ -317,15 +317,6 @@ export class MusicService {
     const pendingSearch = this.pendingSearches.get(searchKey);
     if (pendingSearch) {
       const lower = raw.toLowerCase().trim();
-      if (lower === 'cancel' || lower === 'batal') {
-        clearTimeout(pendingSearch.timeout);
-        this.pendingSearches.delete(searchKey);
-        if (pendingSearch.messageId) {
-          await this.deleteMessage(message.channel_id, pendingSearch.messageId);
-        }
-        return;
-      }
-
       const num = parseInt(lower, 10);
       if (!Number.isNaN(num) && String(num) === lower) {
         if (!this.isUserAllowed(message.author.id)) {
@@ -345,7 +336,7 @@ export class MusicService {
         } else {
           await this.sendReply(
             message.channel_id,
-            fmt.warn(`Pilih angka 1–${pendingSearch.tracks.length}, atau ketik \`cancel\`.`)
+            fmt.warn(`Pilih angka 1–${pendingSearch.tracks.length}.`)
           );
         }
         return;
@@ -633,7 +624,7 @@ export class MusicService {
       const content = [
         '## 🔍 Hasil pencarian',
         candidates.map((t, i) => numberedLine(i + 1, t)).join('\n'),
-        `-# Ketik 1–${candidates.length} untuk memilih • \`cancel\` untuk batal • batal otomatis dalam 30 detik`,
+        `-# Ketik 1–${candidates.length} untuk memilih`,
       ].join('\n\n');
 
       const sentMessageId = await this.sendReply(channelId, content);
@@ -980,7 +971,7 @@ export class MusicService {
 
   private async handleQueueCommand(channelId: string, query?: string): Promise<void> {
     if (!this.currentTrack && this.queue.length === 0) {
-      await this.sendReply(channelId, fmt.queueEmpty);
+      await this.sendAutoExpiringReply(channelId, fmt.queueEmpty, 30000);
       return;
     }
 
@@ -991,9 +982,10 @@ export class MusicService {
     if (query && query.trim()) {
       const parsed = parseInt(query.trim(), 10);
       if (Number.isNaN(parsed) || parsed < 1 || parsed > totalPages) {
-        await this.sendReply(
+        await this.sendAutoExpiringReply(
           channelId,
-          fmt.warn(`Halaman tidak valid (1–${totalPages}). Contoh: \`${this.config.music.prefix}queue 2\``)
+          fmt.warn(`Halaman tidak valid (1–${totalPages}). Contoh: \`${this.config.music.prefix}queue 2\``),
+          30000
         );
         return;
       }
@@ -1033,10 +1025,10 @@ export class MusicService {
         );
       }
     } else {
-      sections.push(`-# Tidak ada lagu berikutnya — tambah dengan \`${this.config.music.prefix}play\``);
+      sections.push(`-# Tambah dengan \`${this.config.music.prefix}play\``);
     }
 
-    await this.sendReply(channelId, sections.join('\n\n'));
+    await this.sendAutoExpiringReply(channelId, sections.join('\n\n'), 30000);
   }
 
   private async handleNowPlayingCommand(channelId: string): Promise<void> {
@@ -1102,7 +1094,7 @@ export class MusicService {
         line('volume <0-100>', 'Atur volume', 'vol'),
         line('stop', 'Hentikan dan kosongkan antrean'),
       ].join('\n'),
-    ].join('\n\n');
+    ].join('\n');
 
     await this.sendReply(channelId, help);
   }
@@ -1117,6 +1109,29 @@ export class MusicService {
       if (i === 0) firstId = id;
     }
     return firstId;
+  }
+
+  /** Sends reply that automatically gets deleted after a duration (TTL). */
+  private async sendAutoExpiringReply(
+    channelId: string,
+    content: string,
+    ttlMs: number = 30000
+  ): Promise<void> {
+    const chunks = splitMessage(content.trim());
+    const messageIds: string[] = [];
+
+    for (const chunk of chunks) {
+      const id = await this.postMessage(channelId, chunk);
+      if (id) messageIds.push(id);
+    }
+
+    if (messageIds.length > 0) {
+      setTimeout(async () => {
+        for (const id of messageIds) {
+          await this.deleteMessage(channelId, id);
+        }
+      }, ttlMs);
+    }
   }
 
   private async postMessage(channelId: string, content: string): Promise<string | null> {
