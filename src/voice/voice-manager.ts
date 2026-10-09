@@ -68,15 +68,35 @@ export class VoiceManager {
     return this.isInVoice ? (this.currentBotChannelId || this.targetChannelId) : null;
   }
 
-  public getUserVoiceChannelId(userId: string): string | null {
+  public getUserVoiceChannelId(userId: string, guildId?: string): string | null {
+    const targetGuild = guildId || this.guildId;
+    if (targetGuild) {
+      const scoped = this.userVoiceChannels.get(`${targetGuild}:${userId}`);
+      if (scoped) return scoped;
+    }
     return this.userVoiceChannels.get(userId) ?? null;
   }
 
-  public isUserInSameVoice(userId: string): boolean {
+  public isUserInSameVoice(userId: string, guildId?: string): boolean {
+    const botGuild = this.getGuildId();
+    // Must be in the exact same server (guild) as the bot
+    if (guildId && botGuild && guildId !== botGuild) {
+      return false;
+    }
+
     const botChannel = this.getCurrentBotChannelId();
     if (!botChannel) return false;
-    const userChannel = this.getUserVoiceChannelId(userId);
-    return Boolean(userChannel && userChannel === botChannel);
+
+    const userChannel = this.getUserVoiceChannelId(userId, guildId || botGuild);
+    if (userChannel && userChannel === botChannel) {
+      return true;
+    }
+
+    if ((!guildId || guildId === botGuild) && this.voiceUsers.has(userId)) {
+      return true;
+    }
+
+    return false;
   }
 
   public resetJoinAttempt(): void {
@@ -287,39 +307,44 @@ export class VoiceManager {
       voiceStateStore.setGuildId(data.id);
     }
 
-    if (data.id !== this.guildId) {
-      return;
-    }
-
-    this.voiceUsers.clear();
-    this.userVoiceChannels.clear();
-
+    // Always track user voice states across guilds
     for (const vs of data.voice_states ?? []) {
       if (vs.channel_id) {
+        this.userVoiceChannels.set(`${data.id}:${vs.user_id}`, vs.channel_id);
         this.userVoiceChannels.set(vs.user_id, vs.channel_id);
         if (botUserId && vs.user_id === botUserId) {
           this.currentBotChannelId = vs.channel_id;
           this.isInVoice = true;
+          this.guildId = data.id;
+          voiceStateStore.setGuildId(data.id);
         }
-        if (this.targetChannelId && vs.channel_id === this.targetChannelId) {
+        const activeTarget = this.currentBotChannelId || this.targetChannelId;
+        if (activeTarget && vs.channel_id === activeTarget && (!this.guildId || data.id === this.guildId)) {
           this.voiceUsers.add(vs.user_id);
         }
       }
     }
-    this.checkVoiceLimit();
+
+    if (data.id === this.guildId) {
+      this.checkVoiceLimit();
+    }
   }
 
   public handleVoiceStateUpdate(data: VoiceState, botUserId: string | null): void {
     if (!botUserId) {
       return;
     }
-    if (this.guildId && data.guild_id && data.guild_id !== this.guildId) {
-      return;
-    }
 
+    // Always track user voice channels (both scoped by guild and universal fallback)
     if (data.channel_id) {
+      if (data.guild_id) {
+        this.userVoiceChannels.set(`${data.guild_id}:${data.user_id}`, data.channel_id);
+      }
       this.userVoiceChannels.set(data.user_id, data.channel_id);
     } else {
+      if (data.guild_id) {
+        this.userVoiceChannels.delete(`${data.guild_id}:${data.user_id}`);
+      }
       this.userVoiceChannels.delete(data.user_id);
     }
 
@@ -328,6 +353,15 @@ export class VoiceManager {
       const wasInVoice = this.isInVoice;
       this.currentBotChannelId = data.channel_id;
       this.isInVoice = Boolean(data.channel_id);
+
+      if (data.guild_id) {
+        this.guildId = data.guild_id;
+        voiceStateStore.setGuildId(data.guild_id);
+      }
+      if (data.channel_id) {
+        this.targetChannelId = data.channel_id;
+        voiceStateStore.setChannelId(data.channel_id, data.guild_id);
+      }
 
       if (wasInVoice && !this.isInVoice) {
         if (!this.targetChannelId) return;
@@ -344,11 +378,12 @@ export class VoiceManager {
       return;
     }
 
-    // Track user counts in target channel
+    // Track user counts in target channel for the active guild
     const targetChannel = this.currentBotChannelId || this.targetChannelId;
-    if (targetChannel && data.channel_id === targetChannel) {
+    const isTargetGuild = !data.guild_id || !this.guildId || data.guild_id === this.guildId;
+    if (isTargetGuild && targetChannel && data.channel_id === targetChannel) {
       this.voiceUsers.add(data.user_id);
-    } else {
+    } else if (isTargetGuild) {
       this.voiceUsers.delete(data.user_id);
     }
 
@@ -364,7 +399,5 @@ export class VoiceManager {
       clearTimeout(this.deafenTimer);
       this.deafenTimer = null;
     }
-    this.userVoiceChannels.clear();
-    this.voiceUsers.clear();
   }
 }

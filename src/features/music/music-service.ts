@@ -152,7 +152,9 @@ export class MusicService {
     if (message.author.id === botUserId) return;
     // Disallow Direct Messages (DM) - voice and music commands only apply in a guild
     if (!message.guild_id) return;
-    this.voiceManager.setGuildId(message.guild_id);
+    if (!this.voiceManager.getInVoice()) {
+      this.voiceManager.setGuildId(message.guild_id);
+    }
 
     let raw = message.content?.trim() || '';
     if (!raw) return;
@@ -164,7 +166,7 @@ export class MusicService {
       const lower = raw.toLowerCase().trim();
       const num = parseInt(lower, 10);
       if (!Number.isNaN(num) && String(num) === lower) {
-        if (!this.voiceManager.isUserInSameVoice(message.author.id)) {
+        if (!this.voiceManager.isUserInSameVoice(message.author.id, message.guild_id)) {
           return;
         }
 
@@ -255,15 +257,15 @@ export class MusicService {
       return;
     }
 
-    // 2. Music commands (including help): require being in the same voice channel as the bot
+    // 2. Music commands (including help): require being in the same voice channel & server as the bot
     if (!this.voiceManager.getInVoice()) {
-      const userVoice = this.voiceManager.getUserVoiceChannelId(message.author.id);
+      const userVoice = this.voiceManager.getUserVoiceChannelId(message.author.id, message.guild_id);
       if (userVoice && this.isVoiceAdminAllowed(message.author.id) && ['play', 'p', 'search', 'find'].includes(cmd)) {
         this.voiceManager.switchChannel(userVoice, message.guild_id);
       } else {
         return;
       }
-    } else if (!this.voiceManager.isUserInSameVoice(message.author.id)) {
+    } else if (!this.voiceManager.isUserInSameVoice(message.author.id, message.guild_id)) {
       return;
     }
 

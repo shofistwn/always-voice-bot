@@ -35,16 +35,16 @@ function parseStringList(val: string | undefined): string[] {
 export function loadConfig(): BotConfig {
   const token = process.env.TOKEN?.trim() || '';
   const guildId = voiceStateStore.guildId || process.env.GUILD_ID?.trim() || '';
-  const channelId = voiceStateStore.channelId;
+  const channelId = voiceStateStore.channelId || process.env.CHANNEL_ID?.trim() || '';
 
   if (!token) {
     logger.error('Missing required environment variable: TOKEN');
   }
   if (!guildId) {
-    logger.info('No guild ID set in voice-state.json. Guild will be detected automatically on connection.');
+    logger.info('No guild ID set. Guild will be detected automatically on connection.');
   }
   if (!channelId) {
-    logger.info('No voice channel set in voice-state.json. Bot will stay disconnected until a channel is selected.');
+    logger.info('No voice channel set. Bot will stay disconnected until a channel is selected.');
   }
 
   const voiceAllowedUserIds = parseStringList(

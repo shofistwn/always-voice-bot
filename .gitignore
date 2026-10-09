@@ -7,6 +7,11 @@ node_modules/
 # Build
 dist/
 
+# Persistent Data
+data/*
+!data/.gitkeep
+voice-state.json
+
 # Logs
 logs/
 *.log

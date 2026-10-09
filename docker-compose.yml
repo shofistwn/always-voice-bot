@@ -1,13 +1,14 @@
 services:
   always-voice:
     build: .
+    image: always-voice:latest
     container_name: always-voice-bot
     restart: unless-stopped
     init: true
     depends_on:
       - nodelink
     volumes:
-      - ./voice-state.json:/app/voice-state.json
+      - ./data:/app/data
     environment:
       - TZ=Asia/Jakarta
       - TOKEN=${TOKEN:-}

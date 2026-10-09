@@ -22,8 +22,8 @@ RUN npm install --omit=dev && npm cache clean --force
 # Copy compiled files from builder
 COPY --from=builder /app/dist ./dist
 
-# Run as non-root user for security
-RUN chown -R node:node /app
+# Create persistent data directory and set permissions
+RUN mkdir -p /app/data && chown -R node:node /app
 USER node
 
 # Execute Node directly without npm wrapper

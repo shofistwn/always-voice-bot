@@ -9,14 +9,39 @@ export interface VoiceStateData {
   channelId: string;
 }
 
-const DEFAULT_STATE_FILE = path.resolve(process.cwd(), 'voice-state.json');
+function resolveDefaultStateFile(): string {
+  if (process.env.VOICE_STATE_FILE) {
+    return path.resolve(process.cwd(), process.env.VOICE_STATE_FILE);
+  }
+  const dataDir = path.resolve(process.cwd(), 'data');
+  const dataFile = path.resolve(dataDir, 'voice-state.json');
+  const legacyFile = path.resolve(process.cwd(), 'voice-state.json');
+
+  // If data/ directory exists or data/voice-state.json exists, use data/voice-state.json
+  if (fs.existsSync(dataFile) || fs.existsSync(dataDir)) {
+    return dataFile;
+  }
+
+  // Backward compatibility: If root voice-state.json exists and is a regular file
+  if (fs.existsSync(legacyFile)) {
+    try {
+      if (fs.statSync(legacyFile).isFile()) {
+        return legacyFile;
+      }
+    } catch {
+      // Ignore stat error and fallback
+    }
+  }
+
+  return dataFile;
+}
 
 export class VoiceStateStore {
   private readonly filePath: string;
   private state: VoiceStateData;
 
-  constructor(filePath: string = DEFAULT_STATE_FILE) {
-    this.filePath = filePath;
+  constructor(filePath?: string) {
+    this.filePath = filePath || resolveDefaultStateFile();
     this.state = this.loadFromFile();
   }
 
@@ -65,7 +90,7 @@ export class VoiceStateStore {
           fs.unlinkSync(this.filePath);
           logger.info(`Removed voice state file at ${path.basename(this.filePath)}`);
         } catch (unlinkErr) {
-          // In Docker file-mounts, unlink fails with EBUSY. Empty the file instead.
+          // In Docker mounts, unlink may fail with EBUSY. Empty the file instead.
           fs.writeFileSync(this.filePath, JSON.stringify({ guildId: '', channelId: '' }, null, 2), 'utf-8');
           logger.info(`Cleared voice state content in ${path.basename(this.filePath)}`);
         }
@@ -80,6 +105,14 @@ export class VoiceStateStore {
   private loadFromFile(): VoiceStateData {
     try {
       if (fs.existsSync(this.filePath)) {
+        const stat = fs.statSync(this.filePath);
+        if (!stat.isFile()) {
+          logger.warn(
+            `Voice state path at ${this.filePath} is a directory, not a file. Skipping.`
+          );
+          return { guildId: '', channelId: '' };
+        }
+
         const raw = fs.readFileSync(this.filePath, 'utf-8').trim();
         if (!raw) {
           logger.info('voice-state.json is empty. Bot will not join voice until configured.');
@@ -112,6 +145,10 @@ export class VoiceStateStore {
 
   public save(): void {
     try {
+      const dir = path.dirname(this.filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
       fs.writeFileSync(this.filePath, JSON.stringify(this.state, null, 2), 'utf-8');
       logger.info(
         `Saved voice state: guild=${this.state.guildId || 'none'}, channel=${this.state.channelId || 'none'}`

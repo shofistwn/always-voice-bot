@@ -18,7 +18,7 @@ help:
 	@echo "  make dev            - Run bot locally (starts NodeLink in background first)"
 	@echo "  make nodelink       - Start only the NodeLink audio server in background"
 	@echo "  make build          - Pull NodeLink image & build bot container"
-	@echo "  make up             - Start both bot & NodeLink containers in background"
+	@echo "  make up             - Build & start both bot & NodeLink containers in background"
 	@echo "  make down           - Stop both bot & NodeLink containers"
 	@echo "  make restart        - Restart all containers"
 	@echo "  make logs           - Show live logs of all containers"
@@ -47,13 +47,15 @@ nodelink:
 # Build container image & pull NodeLink
 build:
 	@echo "Pulling NodeLink image and building bot container using $(COMPOSE)..."
+	@mkdir -p data && chmod 777 data 2>/dev/null || true
 	$(COMPOSE) pull nodelink 2>/dev/null || true
 	$(COMPOSE) build
 
-# Start the bot & NodeLink
+# Start the bot & NodeLink (always builds if code changed)
 up:
 	@echo "Starting Always Voice Bot & NodeLink using $(COMPOSE)..."
-	$(COMPOSE) up -d
+	@mkdir -p data && chmod 777 data 2>/dev/null || true
+	$(COMPOSE) up -d --build
 	@echo "Containers started! Use 'make logs' or 'make logs-bot' to see output."
 
 # Stop everything
@@ -82,12 +84,10 @@ logs-nodelink:
 	@echo "Showing NodeLink server logs (Ctrl+C to exit)..."
 	$(COMPOSE) logs -f nodelink
 
-# Clean everything
+# Clean everything: containers, networks, volumes, and images
 clean:
 	@echo "Cleaning up containers, images, and volumes..."
-	$(COMPOSE) down -v
-	$(CONTAINER_CLI) rmi always-voice 2>/dev/null || true
-	$(CONTAINER_CLI) rmi docker.io/performanc/nodelink:latest 2>/dev/null || true
+	$(COMPOSE) down -v --rmi all --remove-orphans
 	@echo "Cleanup complete!"
 
 # Show container status
