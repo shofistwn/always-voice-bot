@@ -167,10 +167,10 @@ const fmt = {
   fail: (err: unknown) => `❌ Gagal: ${(err as Error).message}`,
 
   // Static messages
-  notFound: '❌ Lagu atau playlist tidak ditemukan.',
-  nodeNotReady: '⚠️ Server audio belum siap, coba lagi sebentar.',
-  nothingPlaying: '⚠️ Tidak ada lagu yang sedang diputar.',
-  queueEmpty: '⚠️ Antrean kosong.',
+  notFound: '🔎 Lagu atau playlist tidak ditemukan.',
+  nodeNotReady: '🔌 Server audio belum siap, coba lagi sebentar.',
+  nothingPlaying: '🎧 Tidak ada lagu yang sedang diputar.',
+  queueEmpty: '🗃️ Antrean kosong.',
   finished: '⏹️ **Antrean selesai**',
 
   // Playback controls
@@ -186,7 +186,7 @@ const fmt = {
   looping: (t: NodeLinkTrack, remaining: number | null) => {
     const header =
       remaining === Infinity
-        ? '🔁 **Memutar ulang lagu (loop infinity)**'
+        ? '🔁 **Memutar ulang lagu**'
         : `🔁 **Memutar ulang lagu** (sisa loop: \`${remaining}x\`)`;
     return `${header}\n${trackCard(t)}`;
   },
@@ -622,7 +622,7 @@ export class MusicService {
       }
 
       const content = [
-        '## 🔍 Hasil pencarian',
+        '### 🔍 Hasil pencarian',
         candidates.map((t, i) => numberedLine(i + 1, t)).join('\n'),
         `-# Ketik 1–${candidates.length} untuk memilih`,
       ].join('\n\n');
@@ -637,7 +637,7 @@ export class MusicService {
             await this.deleteMessage(channelId, current.messageId);
           }
         }
-      }, 30000);
+      }, 60000);
 
       this.pendingSearches.set(searchKey, {
         userId: authorId,
@@ -971,7 +971,7 @@ export class MusicService {
 
   private async handleQueueCommand(channelId: string, query?: string): Promise<void> {
     if (!this.currentTrack && this.queue.length === 0) {
-      await this.sendAutoExpiringReply(channelId, fmt.queueEmpty, 30000);
+      await this.sendAutoExpiringReply(channelId, fmt.queueEmpty, 60000);
       return;
     }
 
@@ -985,7 +985,7 @@ export class MusicService {
         await this.sendAutoExpiringReply(
           channelId,
           fmt.warn(`Halaman tidak valid (1–${totalPages}). Contoh: \`${this.config.music.prefix}queue 2\``),
-          30000
+          60000
         );
         return;
       }
@@ -1001,7 +1001,7 @@ export class MusicService {
       .filter(Boolean)
       .join(' • ');
 
-    const sections: string[] = [summary ? `## 📋 Antrean\n-# ${summary}` : '## 📋 Antrean'];
+    const sections: string[] = [summary ? `### 📋 Antrean\n-# ${summary}` : '### 📋 Antrean'];
 
     if (this.currentTrack) {
       sections.push(`**Sedang memutar**\n${trackCard(this.currentTrack)}`);
@@ -1028,7 +1028,7 @@ export class MusicService {
       sections.push(`-# Tambah dengan \`${this.config.music.prefix}play\``);
     }
 
-    await this.sendAutoExpiringReply(channelId, sections.join('\n\n'), 30000);
+    await this.sendAutoExpiringReply(channelId, sections.join('\n\n'), 60000);
   }
 
   private async handleNowPlayingCommand(channelId: string): Promise<void> {
@@ -1070,23 +1070,23 @@ export class MusicService {
       `- \`${p}${usage}\` — ${desc}${alias ? ` *(${alias})*` : ''}`;
 
     const help = [
-      `## 📖 Perintah Musik\n-# Prefix \`${p}\` • <wajib> • [opsional]`,
+      `### 📖 Perintah Musik\n-# Prefix \`${p}\` • <wajib> • [opsional]\n`,
       [
-        '### 🎵 Memutar',
+        '**🎵 Memutar**',
         line('play <judul/url>', 'Putar atau tambah ke antrean', 'p'),
         line('search <judul>', 'Cari lalu pilih 1–5', 'find'),
         line('nowplaying', 'Lagu saat ini', 'np'),
         line('autoplay', 'Rekomendasi otomatis', 'ap'),
       ].join('\n'),
       [
-        '### 📋 Antrean',
+        '**📋 Antrean**',
         line('queue [halaman]', 'Lihat antrean', 'q'),
         line('jump <nomor>', 'Lompat ke lagu di antrean', 'j, skipto'),
         line('remove <nomor>', 'Hapus dari antrean', 'rm, del'),
         line('undo', 'Batalkan lagu terakhir yang ditambah'),
       ].join('\n'),
       [
-        '### 🎚️ Kontrol',
+        '**🎚️ Kontrol**',
         line('pause', 'Jeda'),
         line('resume', 'Lanjutkan'),
         line('skip', 'Lewati lagu', 's'),
@@ -1115,7 +1115,7 @@ export class MusicService {
   private async sendAutoExpiringReply(
     channelId: string,
     content: string,
-    ttlMs: number = 30000
+    ttlMs: number = 60000
   ): Promise<void> {
     const chunks = splitMessage(content.trim());
     const messageIds: string[] = [];

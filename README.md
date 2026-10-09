@@ -5,7 +5,7 @@ Control music playback directly through Discord text chat using the configured p
 | Command | Alias | Description |
 |---|---|---|
 | `!play <query/url>` | `!p` | Search and play a song or add a playlist to queue. |
-| `!search <query>` | `!find` | Search songs interactively and pick from top 10 results (auto-cancels and cleans up in 30s). |
+| `!search <query>` | `!find` | Search songs interactively and pick from top 10 results (auto-cancels and cleans up in 60s). |
 | `!remove <index>` | `!rm`, `!del` | Remove a specific song from queue by its 1-based index. |
 | `!undo` | | Remove the last added song from the queue. |
 | `!autoplay` | `!ap` | Toggle infinite autoplay for related recommendations. |
