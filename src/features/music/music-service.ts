@@ -926,7 +926,7 @@ export class MusicService {
         line('pause', 'Jeda'),
         line('resume', 'Lanjutkan'),
         line('skip', 'Lewati lagu', 's'),
-        line('loop [jumlah]', 'Putar ulang lagu (default infinity)', 'l, repeat'),
+        line('loop [jumlah]', 'Putar ulang lagu', 'l, repeat'),
         line('volume <0-100>', 'Atur volume', 'vol'),
         line('stop', 'Hentikan dan kosongkan antrean'),
       ].join('\n'),
