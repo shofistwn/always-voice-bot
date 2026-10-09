@@ -55,12 +55,12 @@ export class MusicService {
     this.client = new NodeLinkClient(config.music);
     this.messenger = new DiscordMessenger(config.token);
 
-    if (this.config.music.allowedUserIds.length > 0) {
+    if (this.config.voiceAllowedUserIds.length > 0) {
       logger.info(
-        `Music commands restricted to ${this.config.music.allowedUserIds.length} user(s): [${this.config.music.allowedUserIds.join(', ')}]`
+        `Voice management commands (join, leave) restricted to ${this.config.voiceAllowedUserIds.length} user(s): [${this.config.voiceAllowedUserIds.join(', ')}]`
       );
     } else {
-      logger.info('Music commands open to all server members.');
+      logger.warn('No voice admin users configured in VOICE_ALLOWED_USER_IDS. join/leave commands will be unavailable.');
     }
 
     this.registerNodeLinkEvents();
@@ -105,7 +105,8 @@ export class MusicService {
   public handleVoiceServerUpdate(data: VoiceServerUpdateData): void {
     if (!this.config.music.enabled) return;
 
-    if (data.guild_id === this.config.guildId && data.endpoint) {
+    const currentGuild = this.getGuildId();
+    if ((!currentGuild || data.guild_id === currentGuild) && data.endpoint) {
       this.voiceServerData = data;
       this.syncVoiceStateToNode();
     }
@@ -122,8 +123,9 @@ export class MusicService {
       sessionId: this.voiceSessionId,
     };
 
+    const guildId = this.getGuildId() || this.voiceServerData.guild_id;
     this.client
-      .updatePlayer(this.config.guildId, {
+      .updatePlayer(guildId, {
         voice: voiceUpdate,
       })
       .then(() => {
@@ -137,14 +139,20 @@ export class MusicService {
       });
   }
 
-  private isUserAllowed(userId: string): boolean {
-    const allowed = this.config.music.allowedUserIds;
-    return allowed.length === 0 || allowed.includes(userId);
+  private getGuildId(): string {
+    return this.voiceManager.getGuildId() || this.config.guildId;
+  }
+
+  private isVoiceAdminAllowed(userId: string): boolean {
+    return this.config.voiceAllowedUserIds.includes(userId);
   }
 
   public async handleMessage(message: MessageCreateData, botUserId: string | null): Promise<void> {
     if (!this.config.music.enabled || !botUserId) return;
     if (message.author.id === botUserId) return;
+    // Disallow Direct Messages (DM) - voice and music commands only apply in a guild
+    if (!message.guild_id) return;
+    this.voiceManager.setGuildId(message.guild_id);
 
     let raw = message.content?.trim() || '';
     if (!raw) return;
@@ -156,7 +164,7 @@ export class MusicService {
       const lower = raw.toLowerCase().trim();
       const num = parseInt(lower, 10);
       if (!Number.isNaN(num) && String(num) === lower) {
-        if (!this.isUserAllowed(message.author.id)) {
+        if (!this.voiceManager.isUserInSameVoice(message.author.id)) {
           return;
         }
 
@@ -208,10 +216,12 @@ export class MusicService {
     const knownCommands = [
       'play', 'p',
       'search', 'find',
+      'join', 'move', 'connect',
+      'leave', 'dc', 'disconnect',
       'remove', 'rm', 'del',
       'undo',
       'stop',
-      'skip', 's',
+      'skip', 's', 'next',
       'jump', 'j', 'skipto',
       'pause',
       'resume',
@@ -220,23 +230,47 @@ export class MusicService {
       'volume', 'vol',
       'autoplay', 'ap',
       'loop', 'l', 'repeat',
-      'help',
+      'help', 'h',
     ];
 
     if (!knownCommands.includes(cmd)) return;
 
-    // Verify user whitelist permissions (silently ignore unauthorized users)
-    if (!this.isUserAllowed(message.author.id)) {
+    this.lastChannelId = message.channel_id;
+    logger.info(`Command received: "${cmd}" from ${message.author.username}`);
+
+    // 1. Voice admin commands: only users in VOICE_ALLOWED_USER_IDS (silently ignore unauthorized users)
+    if (['join', 'move', 'connect'].includes(cmd)) {
+      if (!this.isVoiceAdminAllowed(message.author.id)) {
+        return;
+      }
+      await this.handleJoinCommand(message.channel_id, message.author.id, query, message.guild_id);
       return;
     }
 
-    this.lastChannelId = message.channel_id;
-    logger.info(`Command received: "${cmd}" from ${message.author.username}`);
+    if (['leave', 'dc', 'disconnect'].includes(cmd)) {
+      if (!this.isVoiceAdminAllowed(message.author.id)) {
+        return;
+      }
+      await this.handleLeaveCommand(message.channel_id);
+      return;
+    }
+
+    // 2. Music commands (including help): require being in the same voice channel as the bot
+    if (!this.voiceManager.getInVoice()) {
+      const userVoice = this.voiceManager.getUserVoiceChannelId(message.author.id);
+      if (userVoice && this.isVoiceAdminAllowed(message.author.id) && ['play', 'p', 'search', 'find'].includes(cmd)) {
+        this.voiceManager.switchChannel(userVoice, message.guild_id);
+      } else {
+        return;
+      }
+    } else if (!this.voiceManager.isUserInSameVoice(message.author.id)) {
+      return;
+    }
 
     switch (cmd) {
       case 'play':
       case 'p':
-        await this.handlePlayCommand(message.channel_id, query);
+        await this.handlePlayCommand(message.channel_id, message.author.id, query);
         break;
 
       case 'search':
@@ -260,6 +294,7 @@ export class MusicService {
 
       case 'skip':
       case 's':
+      case 'next':
         await this.handleSkipCommand(message.channel_id);
         break;
 
@@ -304,6 +339,7 @@ export class MusicService {
         break;
 
       case 'help':
+      case 'h':
         await this.handleHelpCommand(message.channel_id);
         break;
 
@@ -324,7 +360,7 @@ export class MusicService {
     }
   }
 
-  private async handlePlayCommand(channelId: string, query: string): Promise<void> {
+  private async handlePlayCommand(channelId: string, authorId: string, query: string): Promise<void> {
     if (!query) {
       await this.messenger.sendReply(
         channelId,
@@ -336,6 +372,10 @@ export class MusicService {
     if (!this.client.isConnected()) {
       await this.messenger.sendReply(channelId, fmt.nodeNotReady);
       return;
+    }
+
+    if (!this.voiceManager.getInVoice() && this.voiceManager.getTargetChannelId()) {
+      this.voiceManager.joinVoice();
     }
 
     try {
@@ -527,7 +567,7 @@ export class MusicService {
         if (first) this.playedHistory.delete(first);
       }
 
-      await this.client.updatePlayer(this.config.guildId, {
+      await this.client.updatePlayer(this.getGuildId(), {
         track: { encoded: track.encoded },
         volume: this.volume,
         paused: false,
@@ -593,7 +633,7 @@ export class MusicService {
     this.loopCount = null;
     this.isPaused = false;
     this.voiceManager.restoreMute();
-    this.client.updatePlayer(this.config.guildId, { track: { encoded: null } }).catch(() => {});
+    this.client.updatePlayer(this.getGuildId(), { track: { encoded: null } }).catch(() => {});
     logger.info('Queue finished. Playback stopped.');
     if (this.lastChannelId) {
       await this.messenger.sendReply(this.lastChannelId, fmt.finished);
@@ -719,7 +759,7 @@ export class MusicService {
     await this.messenger.cleanupActivePlayingMessage();
 
     try {
-      await this.client.updatePlayer(this.config.guildId, { track: { encoded: null } });
+      await this.client.updatePlayer(this.getGuildId(), { track: { encoded: null } });
       this.voiceManager.restoreMute();
       await this.messenger.sendReply(channelId, fmt.stopped);
     } catch (err) {
@@ -777,7 +817,7 @@ export class MusicService {
     }
 
     try {
-      await this.client.updatePlayer(this.config.guildId, { paused: true });
+      await this.client.updatePlayer(this.getGuildId(), { paused: true });
       this.isPaused = true;
       await this.messenger.sendReply(channelId, fmt.pausedNow);
     } catch (err) {
@@ -797,7 +837,7 @@ export class MusicService {
     }
 
     try {
-      await this.client.updatePlayer(this.config.guildId, { paused: false });
+      await this.client.updatePlayer(this.getGuildId(), { paused: false });
       this.isPaused = false;
       await this.messenger.sendReply(channelId, fmt.resumed);
     } catch (err) {
@@ -893,7 +933,7 @@ export class MusicService {
 
     this.volume = vol;
     try {
-      await this.client.updatePlayer(this.config.guildId, { volume: vol });
+      await this.client.updatePlayer(this.getGuildId(), { volume: vol });
       await this.messenger.sendReply(channelId, fmt.volume(vol));
     } catch (err) {
       await this.messenger.sendReply(channelId, fmt.fail(err));
@@ -923,16 +963,110 @@ export class MusicService {
       ].join('\n'),
       [
         '**🎚️ Kontrol**',
+        line('join [id]', 'Pindah ke voice channel pengguna atau ID', 'move, connect'),
+        line('leave', 'Keluar dari voice channel dan bersihkan state', 'dc, disconnect'),
         line('pause', 'Jeda'),
         line('resume', 'Lanjutkan'),
-        line('skip', 'Lewati lagu', 's'),
+        line('skip', 'Lewati lagu', 's, next'),
         line('loop [jumlah]', 'Putar ulang lagu', 'l, repeat'),
         line('volume <0-100>', 'Atur volume', 'vol'),
         line('stop', 'Hentikan dan kosongkan antrean'),
+        line('help', 'Tampilkan panduan perintah', 'h'),
       ].join('\n'),
     ].join('\n');
 
     await this.messenger.sendReply(channelId, help);
+  }
+
+  private async handleJoinCommand(
+    textChannelId: string,
+    authorId: string,
+    query?: string,
+    guildId?: string
+  ): Promise<void> {
+    let targetVoiceChannelId: string | null = null;
+    const trimmed = query?.trim();
+
+    if (trimmed) {
+      const mentionMatch = trimmed.match(/^<#(\d+)>$/);
+      if (mentionMatch) {
+        targetVoiceChannelId = mentionMatch[1];
+      } else if (/^\d+$/.test(trimmed)) {
+        targetVoiceChannelId = trimmed;
+      }
+    }
+
+    if (!targetVoiceChannelId) {
+      targetVoiceChannelId = this.voiceManager.getUserVoiceChannelId(authorId);
+    }
+
+    if (!targetVoiceChannelId) {
+      await this.messenger.sendReply(
+        textChannelId,
+        fmt.warn(
+          `Kamu harus berada di voice channel atau berikan ID channel. Contoh: \`${this.config.music.prefix}join\` atau \`${this.config.music.prefix}join 123456789\``
+        )
+      );
+      return;
+    }
+
+    const currentChannel = this.voiceManager.getCurrentBotChannelId();
+    if (currentChannel === targetVoiceChannelId && this.voiceManager.getInVoice()) {
+      await this.messenger.sendReply(
+        textChannelId,
+        `🔊 Bot sudah berada di <#${targetVoiceChannelId}>.`
+      );
+      return;
+    }
+
+    this.voiceManager.switchChannel(targetVoiceChannelId, guildId);
+    const channelName = this.cache?.getChannelName(targetVoiceChannelId);
+    const displayName = channelName
+      ? `**${channelName}** (<#${targetVoiceChannelId}>)`
+      : `<#${targetVoiceChannelId}>`;
+
+    await this.messenger.sendReply(
+      textChannelId,
+      `🔊 **Bergabung ke** ${displayName}`
+    );
+  }
+
+  private async handleLeaveCommand(textChannelId: string): Promise<void> {
+    if (!this.voiceManager.getInVoice() && !this.voiceManager.getTargetChannelId()) {
+      await this.messenger.sendReply(
+        textChannelId,
+        fmt.warn('Bot sedang tidak berada di voice channel.')
+      );
+      return;
+    }
+
+    const previousChannel =
+      this.voiceManager.getCurrentBotChannelId() || this.voiceManager.getTargetChannelId();
+
+    this.queue = [];
+    this.currentTrack = null;
+    this.loopCount = null;
+    await this.messenger.cleanupActivePlayingMessage();
+    try {
+      await this.client.updatePlayer(this.getGuildId(), { track: { encoded: null } });
+      this.voiceManager.restoreMute();
+    } catch {}
+
+    this.voiceManager.leaveVoice(true);
+
+    const channelName = previousChannel ? this.cache?.getChannelName(previousChannel) : null;
+    const display = channelName
+      ? `**${channelName}** (<#${previousChannel}>)`
+      : previousChannel
+        ? `<#${previousChannel}>`
+        : '';
+
+    await this.messenger.sendReply(
+      textChannelId,
+      display
+        ? `👋 **Keluar dari** ${display} dan konfigurasi voice dibersihkan.`
+        : '👋 **Keluar dari voice channel**.'
+    );
   }
 
   public destroy(): void {

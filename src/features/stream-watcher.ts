@@ -1,6 +1,7 @@
 import type { BotConfig } from '../types/config.js';
 import type { GuildCreateData, StreamCreateData, StreamDeleteData, VoiceState } from '../types/discord.js';
 import type { EntityCache } from '../cache/entity-cache.js';
+import type { VoiceManager } from '../voice/voice-manager.js';
 import { GATEWAY_OPCODES } from '../constants/discord.js';
 import { createLogger } from '../logger/index.js';
 
@@ -15,12 +16,31 @@ export class StreamWatcherService {
   private readonly config: BotConfig;
   private readonly sender: StreamGatewaySender;
   private readonly cache?: EntityCache;
+  private readonly voiceManager?: VoiceManager;
   private readonly activeStreams: Set<string> = new Set();
 
-  constructor(config: BotConfig, sender: StreamGatewaySender, cache?: EntityCache) {
+  constructor(
+    config: BotConfig,
+    sender: StreamGatewaySender,
+    cache?: EntityCache,
+    voiceManager?: VoiceManager
+  ) {
     this.config = config;
     this.sender = sender;
     this.cache = cache;
+    this.voiceManager = voiceManager;
+  }
+
+  private getTargetChannelId(): string {
+    return (
+      this.voiceManager?.getCurrentBotChannelId() ||
+      this.voiceManager?.getTargetChannelId() ||
+      this.config.channelId
+    );
+  }
+
+  private getGuildId(): string {
+    return this.voiceManager?.getGuildId() || this.config.guildId;
   }
 
   private extractStreamerId(streamKey: string): string {
@@ -29,16 +49,22 @@ export class StreamWatcherService {
   }
 
   public handleGuildCreate(data: GuildCreateData, botUserId: string | null): void {
-    if (!this.config.autoWatchStream || data.id !== this.config.guildId) {
+    const currentGuildId = this.getGuildId();
+    if (!this.config.autoWatchStream || (currentGuildId && data.id !== currentGuildId)) {
+      return;
+    }
+
+    const targetChannel = this.getTargetChannelId();
+    if (!targetChannel) {
       return;
     }
 
     for (const vs of data.voice_states || []) {
-      if (vs.channel_id === this.config.channelId && vs.self_stream) {
+      if (vs.channel_id === targetChannel && vs.self_stream) {
         if (botUserId && vs.user_id === botUserId) {
           continue;
         }
-        const targetKey = `guild:${this.config.guildId}:${this.config.channelId}:${vs.user_id}`;
+        const targetKey = `guild:${data.id}:${targetChannel}:${vs.user_id}`;
         this.watchStream(targetKey, vs.user_id);
       }
     }
@@ -49,11 +75,17 @@ export class StreamWatcherService {
       return;
     }
 
+    const targetChannel = this.getTargetChannelId();
+    const currentGuildId = this.getGuildId();
+    if (!targetChannel) {
+      return;
+    }
+
     const parts = data.stream_key.split(':');
     if (parts[0] === 'guild') {
       const [, guildId, channelId, streamerId] = parts;
 
-      if (guildId === this.config.guildId && channelId === this.config.channelId) {
+      if ((!currentGuildId || guildId === currentGuildId) && channelId === targetChannel) {
         if (botUserId && streamerId === botUserId) {
           return;
         }
@@ -86,10 +118,16 @@ export class StreamWatcherService {
       return;
     }
 
-    const targetKey = `guild:${this.config.guildId}:${this.config.channelId}:${data.user_id}`;
+    const targetChannel = this.getTargetChannelId();
+    const currentGuildId = this.getGuildId();
+    if (!targetChannel) {
+      return;
+    }
+
+    const targetKey = `guild:${currentGuildId || data.guild_id}:${targetChannel}:${data.user_id}`;
 
     // User is in target voice channel and streaming
-    if (data.channel_id === this.config.channelId && data.self_stream) {
+    if (data.channel_id === targetChannel && data.self_stream) {
       if (!this.activeStreams.has(targetKey)) {
         this.watchStream(targetKey, data.user_id);
       }
@@ -113,10 +151,10 @@ export class StreamWatcherService {
       this.activeStreams.add(streamKey);
 
       const userId = streamerId ?? this.extractStreamerId(streamKey);
-      const displayName = this.cache?.getUserName(userId) ?? `user ${userId}`;
-      logger.success(`Watching stream from ${displayName}`);
+      const username = this.cache?.getUserName(userId) ?? userId;
+      logger.info(`Watching stream from ${username} (${streamKey})`);
     } catch (error) {
-      logger.warn(`Failed to send STREAM_WATCH: ${(error as Error).message}`);
+      logger.error(`Failed to watch stream: ${(error as Error).message}`);
     }
   }
 
@@ -125,27 +163,13 @@ export class StreamWatcherService {
       return;
     }
 
-    try {
-      if (this.sender.isConnected()) {
-        this.sender.sendOp(GATEWAY_OPCODES.STREAM_DELETE, {
-          stream_key: streamKey,
-        });
-      }
-      this.activeStreams.delete(streamKey);
-
-      const userId = this.extractStreamerId(streamKey);
-      const displayName = this.cache?.getUserName(userId) ?? `user ${userId}`;
-      logger.info(`Stream ended from ${displayName}`);
-    } catch (error) {
-      logger.warn(`Failed to send STREAM_DELETE: ${(error as Error).message}`);
-      this.activeStreams.delete(streamKey);
-    }
+    this.activeStreams.delete(streamKey);
+    const userId = this.extractStreamerId(streamKey);
+    const username = this.cache?.getUserName(userId) ?? userId;
+    logger.info(`Stopped watching stream from ${username}`);
   }
 
   public clearAll(): void {
-    for (const streamKey of this.activeStreams) {
-      this.unwatchStream(streamKey);
-    }
     this.activeStreams.clear();
   }
 

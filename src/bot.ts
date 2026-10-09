@@ -27,7 +27,7 @@ export class AlwaysVoiceBot {
     this.gateway = new GatewayClient(config);
     this.voiceManager = new VoiceManager(config, this.gateway, this.cache);
     this.autoReply = new AutoReplyService(config, this.cache);
-    this.streamWatcher = new StreamWatcherService(config, this.gateway, this.cache);
+    this.streamWatcher = new StreamWatcherService(config, this.gateway, this.cache, this.voiceManager);
 
     if (config.music.enabled) {
       this.musicService = new MusicService(config, this.voiceManager, this.cache);

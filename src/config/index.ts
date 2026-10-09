@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import type { BotConfig, OnlineStatus } from '../types/config.js';
 import { createLogger } from '../logger/index.js';
+import { voiceStateStore } from './voice-state.js';
 
 const logger = createLogger('Config');
 
@@ -33,30 +34,45 @@ function parseStringList(val: string | undefined): string[] {
 
 export function loadConfig(): BotConfig {
   const token = process.env.TOKEN?.trim() || '';
-  const guildId = process.env.GUILD_ID?.trim() || '';
-  const channelId = process.env.CHANNEL_ID?.trim() || '';
+  const guildId = voiceStateStore.guildId || process.env.GUILD_ID?.trim() || '';
+  const channelId = voiceStateStore.channelId;
 
   if (!token) {
     logger.error('Missing required environment variable: TOKEN');
   }
   if (!guildId) {
-    logger.error('Missing required environment variable: GUILD_ID');
+    logger.info('No guild ID set in voice-state.json. Guild will be detected automatically on connection.');
   }
   if (!channelId) {
-    logger.error('Missing required environment variable: CHANNEL_ID');
+    logger.info('No voice channel set in voice-state.json. Bot will stay disconnected until a channel is selected.');
+  }
+
+  const voiceAllowedUserIds = parseStringList(
+    process.env.VOICE_ALLOWED_USER_IDS || process.env.VOICE_ALLOWED_USERS
+  );
+
+  const musicEnabled = parseBoolean(process.env.MUSIC_ENABLED, true);
+  const selfMute = musicEnabled ? false : parseBoolean(process.env.SELF_MUTE, true);
+  const selfDeaf = musicEnabled ? false : parseBoolean(process.env.SELF_DEAF, false);
+  const autoReplyEnabled = musicEnabled ? false : parseBoolean(process.env.AUTO_REPLY, false);
+  const voiceLimit = musicEnabled ? 0 : parseNumber(process.env.VOICE_LIMIT, 0);
+
+  if (musicEnabled) {
+    logger.info('Music mode enabled: AUTO_REPLY, SELF_MUTE, SELF_DEAF, and VOICE_LIMIT are ignored.');
   }
 
   return {
     token,
     guildId,
     channelId,
-    voiceLimit: parseNumber(process.env.VOICE_LIMIT, 0),
+    voiceLimit,
+    voiceAllowedUserIds,
     status: parseStatus(process.env.STATUS, 'dnd'),
-    selfMute: parseBoolean(process.env.SELF_MUTE, true),
-    selfDeaf: parseBoolean(process.env.SELF_DEAF, false),
+    selfMute,
+    selfDeaf,
     autoWatchStream: parseBoolean(process.env.AUTO_WATCH_STREAM, true),
     autoReply: {
-      enabled: parseBoolean(process.env.AUTO_REPLY, false),
+      enabled: autoReplyEnabled,
       trigger: (process.env.REPLY_TRIGGER || 'hey wake up!').trim().toLowerCase(),
       message: process.env.REPLY_MESSAGE || 'yes',
       delaySeconds: parseNumber(process.env.REPLY_DELAY, 5),
@@ -64,11 +80,8 @@ export function loadConfig(): BotConfig {
       undeafenMaxSeconds: parseNumber(process.env.UNDEAFEN_MAX_SECONDS, 900),
     },
     music: {
-      enabled: parseBoolean(process.env.MUSIC_ENABLED, true),
+      enabled: musicEnabled,
       prefix: (process.env.MUSIC_PREFIX || '!').trim(),
-      allowedUserIds: parseStringList(
-        process.env.MUSIC_ALLOWED_USER_IDS || process.env.MUSIC_ALLOWED_USERS
-      ),
       nodelinkHost: process.env.NODELINK_HOST || 'localhost',
       nodelinkPort: parseNumber(process.env.NODELINK_PORT, 3000),
       nodelinkPassword: process.env.NODELINK_PASSWORD || 'youshallnotpass',
