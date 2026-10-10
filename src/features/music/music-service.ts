@@ -27,12 +27,40 @@ import type { PendingSearch } from './types.js';
 
 const logger = createLogger('Music');
 
+const JOIN_COMMANDS = new Set(['join', 'move', 'connect']);
+const LEAVE_COMMANDS = new Set(['leave', 'dc', 'disconnect']);
+const VOICE_ADMIN_COMMANDS = new Set([...JOIN_COMMANDS, ...LEAVE_COMMANDS]);
+const AUTO_JOIN_COMMANDS = new Set(['play', 'p', 'search', 'find']);
+
+const MUSIC_COMMANDS = new Set([
+  'play', 'p',
+  'search', 'find',
+  'remove', 'rm', 'del',
+  'undo',
+  'stop',
+  'skip', 's', 'next',
+  'jump', 'j', 'skipto',
+  'pause',
+  'resume',
+  'queue', 'q',
+  'nowplaying', 'np',
+  'volume', 'vol',
+  'autoplay', 'ap',
+  'loop', 'l', 'repeat',
+  'help', 'h',
+]);
+
 export class MusicService {
   private readonly config: BotConfig;
   private readonly client: NodeLinkClient;
   private readonly voiceManager: VoiceManager;
   private readonly cache?: EntityCache;
   private readonly messenger: DiscordMessenger;
+
+  private readonly voiceAllowedUserIdsSet: ReadonlySet<string>;
+  private readonly musicAllowedUserIdsSet: ReadonlySet<string>;
+  private cachedBotUserId: string | null = null;
+  private cachedMentionRegex: RegExp | null = null;
 
   private voiceSessionId: string | null = null;
   private voiceServerData: VoiceServerUpdateData | null = null;
@@ -55,12 +83,25 @@ export class MusicService {
     this.client = new NodeLinkClient(config.music);
     this.messenger = new DiscordMessenger(config.token);
 
-    if (this.config.voiceAllowedUserIds.length > 0) {
+    this.voiceAllowedUserIdsSet = new Set(config.voiceAllowedUserIds);
+    this.musicAllowedUserIdsSet = new Set(config.musicAllowedUserIds);
+
+    if (this.voiceAllowedUserIdsSet.size > 0) {
       logger.info(
-        `Voice management commands (join, leave) restricted to ${this.config.voiceAllowedUserIds.length} user(s): [${this.config.voiceAllowedUserIds.join(', ')}]`
+        `Voice management commands (join, leave) restricted to ${this.voiceAllowedUserIdsSet.size} user(s): [${[...this.voiceAllowedUserIdsSet].join(', ')}]`
       );
     } else {
       logger.warn('No voice admin users configured in VOICE_ALLOWED_USER_IDS. join/leave commands will be unavailable.');
+    }
+
+    if (this.musicAllowedUserIdsSet.size > 0) {
+      logger.info(
+        `Music commands allowed for ${this.musicAllowedUserIdsSet.size} user(s) in MUSIC_ALLOWED_USER_IDS plus voice admins.`
+      );
+    } else {
+      logger.info(
+        'No specific MUSIC_ALLOWED_USER_IDS configured. Only users in VOICE_ALLOWED_USER_IDS can run music commands.'
+      );
     }
 
     this.registerNodeLinkEvents();
@@ -144,7 +185,19 @@ export class MusicService {
   }
 
   private isVoiceAdminAllowed(userId: string): boolean {
-    return this.config.voiceAllowedUserIds.includes(userId);
+    return this.voiceAllowedUserIdsSet.has(userId);
+  }
+
+  private isMusicAllowed(userId: string): boolean {
+    return this.voiceAllowedUserIdsSet.has(userId) || this.musicAllowedUserIdsSet.has(userId);
+  }
+
+  private getMentionRegex(botUserId: string): RegExp {
+    if (this.cachedBotUserId !== botUserId || !this.cachedMentionRegex) {
+      this.cachedBotUserId = botUserId;
+      this.cachedMentionRegex = new RegExp(`^<@!?${botUserId}>\\s*`, 'i');
+    }
+    return this.cachedMentionRegex;
   }
 
   public async handleMessage(message: MessageCreateData, botUserId: string | null): Promise<void> {
@@ -152,9 +205,6 @@ export class MusicService {
     if (message.author.id === botUserId) return;
     // Disallow Direct Messages (DM) - voice and music commands only apply in a guild
     if (!message.guild_id) return;
-    if (!this.voiceManager.getInVoice()) {
-      this.voiceManager.setGuildId(message.guild_id);
-    }
 
     let raw = message.content?.trim() || '';
     if (!raw) return;
@@ -166,7 +216,13 @@ export class MusicService {
       const lower = raw.toLowerCase().trim();
       const num = parseInt(lower, 10);
       if (!Number.isNaN(num) && String(num) === lower) {
-        if (!this.voiceManager.isUserInSameVoice(message.author.id, message.guild_id)) {
+        if (!this.isMusicAllowed(message.author.id)) {
+          return;
+        }
+
+        // Must be in the exact same server (guild) as the bot
+        const botGuildId = this.getGuildId();
+        if (botGuildId && message.guild_id !== botGuildId) {
           return;
         }
 
@@ -192,7 +248,7 @@ export class MusicService {
 
     // Check if bot was mentioned
     const isMentioned = message.mentions.some((m) => m.id === botUserId);
-    const mentionRegex = new RegExp(`^<@!?${botUserId}>\\s*`, 'i');
+    const mentionRegex = this.getMentionRegex(botUserId);
     const hasMentionPrefix = mentionRegex.test(raw);
 
     if (hasMentionPrefix) {
@@ -215,58 +271,52 @@ export class MusicService {
     const cmd = command.toLowerCase();
     const query = args.join(' ');
 
-    const knownCommands = [
-      'play', 'p',
-      'search', 'find',
-      'join', 'move', 'connect',
-      'leave', 'dc', 'disconnect',
-      'remove', 'rm', 'del',
-      'undo',
-      'stop',
-      'skip', 's', 'next',
-      'jump', 'j', 'skipto',
-      'pause',
-      'resume',
-      'queue', 'q',
-      'nowplaying', 'np',
-      'volume', 'vol',
-      'autoplay', 'ap',
-      'loop', 'l', 'repeat',
-      'help', 'h',
-    ];
+    const isVoiceAdminCmd = VOICE_ADMIN_COMMANDS.has(cmd);
+    const isMusicCmd = MUSIC_COMMANDS.has(cmd);
 
-    if (!knownCommands.includes(cmd)) return;
+    if (!isVoiceAdminCmd && !isMusicCmd) return;
+
+    // 1. Voice admin commands: only users in VOICE_ALLOWED_USER_IDS (silently ignore unauthorized users)
+    if (isVoiceAdminCmd) {
+      if (!this.isVoiceAdminAllowed(message.author.id)) {
+        return;
+      }
+      this.lastChannelId = message.channel_id;
+      logger.info(`Command received: "${cmd}" from ${message.author.username}`);
+
+      if (JOIN_COMMANDS.has(cmd)) {
+        await this.handleJoinCommand(message.channel_id, message.author.id, query, message.guild_id);
+      } else {
+        await this.handleLeaveCommand(message.channel_id);
+      }
+      return;
+    }
+
+    // 2. Music commands: only users in VOICE_ALLOWED_USER_IDS or MUSIC_ALLOWED_USER_IDS
+    // Users not in either list are completely ignored with no reply
+    if (!this.isMusicAllowed(message.author.id)) {
+      return;
+    }
+
+    // Must be in the exact same server (guild) as the bot
+    const botGuildId = this.getGuildId();
+    if (botGuildId && message.guild_id !== botGuildId) {
+      return;
+    }
+
+    if (!botGuildId) {
+      this.voiceManager.setGuildId(message.guild_id);
+    }
 
     this.lastChannelId = message.channel_id;
     logger.info(`Command received: "${cmd}" from ${message.author.username}`);
 
-    // 1. Voice admin commands: only users in VOICE_ALLOWED_USER_IDS (silently ignore unauthorized users)
-    if (['join', 'move', 'connect'].includes(cmd)) {
-      if (!this.isVoiceAdminAllowed(message.author.id)) {
-        return;
-      }
-      await this.handleJoinCommand(message.channel_id, message.author.id, query, message.guild_id);
-      return;
-    }
-
-    if (['leave', 'dc', 'disconnect'].includes(cmd)) {
-      if (!this.isVoiceAdminAllowed(message.author.id)) {
-        return;
-      }
-      await this.handleLeaveCommand(message.channel_id);
-      return;
-    }
-
-    // 2. Music commands (including help): require being in the same voice channel & server as the bot
+    // If bot is not in a voice channel yet, auto-join user's voice channel if available on play/search
     if (!this.voiceManager.getInVoice()) {
       const userVoice = this.voiceManager.getUserVoiceChannelId(message.author.id, message.guild_id);
-      if (userVoice && this.isVoiceAdminAllowed(message.author.id) && ['play', 'p', 'search', 'find'].includes(cmd)) {
+      if (userVoice && AUTO_JOIN_COMMANDS.has(cmd)) {
         this.voiceManager.switchChannel(userVoice, message.guild_id);
-      } else {
-        return;
       }
-    } else if (!this.voiceManager.isUserInSameVoice(message.author.id, message.guild_id)) {
-      return;
     }
 
     switch (cmd) {

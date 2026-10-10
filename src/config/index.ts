@@ -50,6 +50,9 @@ export function loadConfig(): BotConfig {
   const voiceAllowedUserIds = parseStringList(
     process.env.VOICE_ALLOWED_USER_IDS || process.env.VOICE_ALLOWED_USERS
   );
+  const musicAllowedUserIds = parseStringList(
+    process.env.MUSIC_ALLOWED_USER_IDS || process.env.MUSIC_ALLOWED_USERS
+  );
 
   const musicEnabled = parseBoolean(process.env.MUSIC_ENABLED, true);
   const selfMute = musicEnabled ? false : parseBoolean(process.env.SELF_MUTE, true);
@@ -67,6 +70,7 @@ export function loadConfig(): BotConfig {
     channelId,
     voiceLimit,
     voiceAllowedUserIds,
+    musicAllowedUserIds,
     status: parseStatus(process.env.STATUS, 'dnd'),
     selfMute,
     selfDeaf,

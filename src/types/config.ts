@@ -15,6 +15,7 @@ export interface BotConfig {
   channelId: string;
   voiceLimit: number;
   voiceAllowedUserIds: string[];
+  musicAllowedUserIds: string[];
   status: OnlineStatus;
   selfMute: boolean;
   selfDeaf: boolean;
