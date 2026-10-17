@@ -44,10 +44,10 @@ services:
       - NODELINK_PORT=3000
       - NODELINK_PASSWORD=youshallnotpass
       # Configure NodeLink to search strictly from YouTube
-      - NODELINK_SEARCH_DEFAULTSOURCE=["youtube"]
-      - NODELINK_DEFAULTSEARCHSOURCE=["youtube"]
-      - NODELINK_SEARCH_UNIFIEDSOURCES=["youtube"]
-      - NODELINK_UNIFIEDSEARCHSOURCES=["youtube"]
+      - NODELINK_SEARCH_DEFAULTSOURCE=["youtubeMusic"]
+      - NODELINK_DEFAULTSEARCHSOURCE=["youtubeMusic"]
+      - NODELINK_SEARCH_UNIFIEDSOURCES=["youtubeMusic"]
+      - NODELINK_UNIFIEDSEARCHSOURCES=["youtubeMusic"]
       # YouTube source settings
       - NODELINK_SOURCES_YOUTUBE_ENABLED=true
       - NODELINK_SOURCES_YOUTUBE_GETOAUTHTOKEN=${YOUTUBE_GET_OAUTH_TOKEN:-false}
