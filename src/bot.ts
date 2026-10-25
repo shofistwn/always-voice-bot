@@ -34,6 +34,7 @@ export class AlwaysVoiceBot {
       this.botUserId = data.user.id;
 
       this.cache.handleReady(data);
+      this.streamWatcher.handleReady(data, this.botUserId);
       this.voiceManager.setInVoice(false);
       this.voiceManager.resetJoinAttempt();
       this.voiceManager.joinVoice();
