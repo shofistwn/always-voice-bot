@@ -1,4 +1,3 @@
-import EventEmitter from 'node:events';
 import type { BotConfig } from '../types/config.js';
 import type { MessageCreateData } from '../types/discord.js';
 import type { EntityCache } from '../cache/entity-cache.js';
@@ -7,13 +6,12 @@ import { createLogger } from '../logger/index.js';
 
 const logger = createLogger('AutoReply');
 
-export class AutoReplyService extends EventEmitter {
+export class AutoReplyService {
   private readonly config: BotConfig;
   private readonly cache?: EntityCache;
   private readonly activeTimers: Set<NodeJS.Timeout> = new Set();
 
   constructor(config: BotConfig, cache?: EntityCache) {
-    super();
     this.config = config;
     this.cache = cache;
   }
@@ -43,7 +41,6 @@ export class AutoReplyService extends EventEmitter {
       `Triggered by ${message.author.username}. Replying in ${this.config.autoReply.delaySeconds}s...`
     );
 
-    this.emit('trigger', message);
     this.sendDelayedReply(message.channel_id);
   }
 
@@ -90,6 +87,5 @@ export class AutoReplyService extends EventEmitter {
       clearTimeout(timer);
     }
     this.activeTimers.clear();
-    this.removeAllListeners();
   }
 }

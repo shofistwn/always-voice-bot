@@ -1,4 +1,4 @@
-.PHONY: help build up down restart logs logs-bot logs-nodelink nodelink clean status install dev
+.PHONY: help build up down restart logs clean status install dev
 
 # Detect container compose tool (docker compose, docker-compose, podman-compose, podman compose)
 COMPOSE ?= $(shell if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then echo "docker compose"; \
@@ -15,15 +15,12 @@ CONTAINER_CLI ?= $(shell if command -v docker >/dev/null 2>&1; then echo "docker
 help:
 	@echo "Available commands:"
 	@echo "  make install        - Install local npm dependencies"
-	@echo "  make dev            - Run bot locally (starts NodeLink in background first)"
-	@echo "  make nodelink       - Start only the NodeLink audio server in background"
-	@echo "  make build          - Pull NodeLink image & build bot container"
-	@echo "  make up             - Build & start both bot & NodeLink containers in background"
-	@echo "  make down           - Stop both bot & NodeLink containers"
-	@echo "  make restart        - Restart all containers"
-	@echo "  make logs           - Show live logs of all containers"
-	@echo "  make logs-bot       - Show live logs of the bot only"
-	@echo "  make logs-nodelink  - Show live logs of the NodeLink server only"
+	@echo "  make dev            - Run bot locally in development mode"
+	@echo "  make build          - Build bot container"
+	@echo "  make up             - Build & start bot container in background"
+	@echo "  make down           - Stop bot container"
+	@echo "  make restart        - Restart bot container"
+	@echo "  make logs           - Show live logs of the bot container"
 	@echo "  make clean          - Remove containers, images, and volumes"
 	@echo "  make status         - Show container status"
 	@echo ""
@@ -34,55 +31,34 @@ install:
 	npm install
 
 dev:
-	@echo "Ensuring NodeLink audio node is running..."
-	$(COMPOSE) up -d nodelink
-	NODELINK_HOST=localhost NODELINK_PORT=3000 npm run dev
+	npm run dev
 
-# Start only NodeLink audio server
-nodelink:
-	@echo "Starting NodeLink audio node using $(COMPOSE)..."
-	$(COMPOSE) up -d nodelink
-	@echo "NodeLink started on port 3000 (and mapped 2333)."
-
-# Build container image & pull NodeLink
+# Build container image
 build:
-	@echo "Pulling NodeLink image and building bot container using $(COMPOSE)..."
-	@mkdir -p data && chmod 777 data 2>/dev/null || true
-	$(COMPOSE) pull nodelink 2>/dev/null || true
+	@echo "Building bot container using $(COMPOSE)..."
 	$(COMPOSE) build
 
-# Start the bot & NodeLink (always builds if code changed)
+# Start the bot (always builds if code changed)
 up:
-	@echo "Starting Always Voice Bot & NodeLink using $(COMPOSE)..."
-	@mkdir -p data && chmod 777 data 2>/dev/null || true
+	@echo "Starting Always Voice Bot using $(COMPOSE)..."
 	$(COMPOSE) up -d --build
-	@echo "Containers started! Use 'make logs' or 'make logs-bot' to see output."
+	@echo "Container started! Use 'make logs' to see output."
 
 # Stop everything
 down:
-	@echo "Stopping bot and NodeLink containers..."
+	@echo "Stopping bot container..."
 	$(COMPOSE) down
 
-# Restart everything
+# Restart container
 restart:
-	@echo "Restarting containers..."
+	@echo "Restarting container..."
 	$(COMPOSE) restart
-	@echo "Containers restarted!"
+	@echo "Container restarted!"
 
-# Show all logs
+# Show logs
 logs:
-	@echo "Showing all container logs (Ctrl+C to exit)..."
-	$(COMPOSE) logs -f
-
-# Show bot logs only
-logs-bot:
 	@echo "Showing bot logs (Ctrl+C to exit)..."
-	$(COMPOSE) logs -f always-voice
-
-# Show NodeLink logs only
-logs-nodelink:
-	@echo "Showing NodeLink server logs (Ctrl+C to exit)..."
-	$(COMPOSE) logs -f nodelink
+	$(COMPOSE) logs -f
 
 # Clean everything: containers, networks, volumes, and images
 clean:

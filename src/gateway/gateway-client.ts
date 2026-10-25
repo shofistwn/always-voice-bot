@@ -7,7 +7,6 @@ import type {
   ReadyEventData,
   GuildCreateData,
   VoiceState,
-  VoiceServerUpdateData,
   MessageCreateData,
   StreamCreateData,
   StreamDeleteData,
@@ -22,10 +21,15 @@ export interface GatewayClientEvents {
   ready: (data: ReadyEventData) => void;
   guildCreate: (data: GuildCreateData) => void;
   voiceStateUpdate: (data: VoiceState) => void;
-  voiceServerUpdate: (data: VoiceServerUpdateData) => void;
   messageCreate: (data: MessageCreateData) => void;
   streamCreate: (data: StreamCreateData) => void;
   streamDelete: (data: StreamDeleteData) => void;
+}
+
+export interface GatewayClient {
+  on<U extends keyof GatewayClientEvents>(event: U, listener: GatewayClientEvents[U]): this;
+  once<U extends keyof GatewayClientEvents>(event: U, listener: GatewayClientEvents[U]): this;
+  emit<U extends keyof GatewayClientEvents>(event: U, ...args: Parameters<GatewayClientEvents[U]>): boolean;
 }
 
 export class GatewayClient extends EventEmitter {
@@ -207,11 +211,6 @@ export class GatewayClient extends EventEmitter {
 
       case 'VOICE_STATE_UPDATE': {
         this.emit('voiceStateUpdate', data as VoiceState);
-        break;
-      }
-
-      case 'VOICE_SERVER_UPDATE': {
-        this.emit('voiceServerUpdate', data as VoiceServerUpdateData);
         break;
       }
 

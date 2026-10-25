@@ -44,12 +44,6 @@ export interface VoiceState {
   member?: GuildMember;
 }
 
-export interface VoiceServerUpdateData {
-  token: string;
-  guild_id: string;
-  endpoint: string | null;
-}
-
 export interface GuildChannel {
   id: string;
   name: string;

@@ -1,28 +1,140 @@
-## 🎵 Music Commands
+# 🎙️ AlwaysVoiceBot
 
-Control music playback directly through Discord text chat using the configured prefix (default `!`):
+A lightweight, modular Discord self-bot written in **TypeScript** designed to maintain a persistent presence in a voice channel. Built with a **fail-fast** architecture — any connection drop, invalid session, or unhandled exception will terminate the process, relying on Docker's `restart: unless-stopped` policy (or a process manager) for automatic recovery.
 
-| Command | Alias | Description |
+## ✨ Features
+
+- **Auto-Rejoin** — Reconnects automatically if disconnected from voice (with a 5-second backoff).
+- **Auto-Watch Streaming** — Automatically detects screen share / Go Live streams in the channel and watches them (OP 20 `STREAM_WATCH`) with zero video decoding overhead.
+- **Voice Limit** — Monitors channel occupancy; leaves if user count exceeds `VOICE_LIMIT`, and rejoins once it is safe.
+- **Auto-Reply (Static)** — Replies with a predefined message when mentioned with a trigger phrase.
+- **Modular TypeScript Architecture** — Decoupled modules for Gateway, Voice, Auto-Reply, Stream Watcher, Cache, and Configuration.
+- **Structured Scoped Logging** — Colorized, padded, scoped log output with configurable log filtering and entity name resolution.
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- [Docker & Docker Compose](https://www.docker.com/) (recommended) OR [Node.js](https://nodejs.org/) v20+
+- A Discord user token
+
+### Setup with Docker (Recommended)
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/shofistwn/always-voice-bot.git
+   cd always-voice-bot
+   ```
+
+2. Configure environment variables:
+   ```bash
+   cp .env.example .env
+   ```
+   Edit `.env` with your Discord token, guild ID, and channel ID.
+
+3. Start the bot:
+   ```bash
+   make up
+   ```
+
+### Setup Locally
+
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+2. Build TypeScript:
+   ```bash
+   npm run build
+   ```
+
+3. Start the bot:
+   ```bash
+   npm start
+   ```
+   *(Or run in development mode with `npm run dev`)*
+
+## ⚙️ Configuration
+
+All configuration is handled via environment variables in the `.env` file:
+
+### Core Settings
+
+| Variable | Default | Description |
 |---|---|---|
-| `!play <query/url>` | `!p` | Search and play a song or add a playlist to queue. |
-| `!search <query>` | `!find` | Search songs interactively and pick from top 5 results (auto-cancels and cleans up in 60s). |
-| `!remove <index>` | `!rm`, `!del` | Remove a specific song from queue by its 1-based index. |
-| `!undo` | | Remove the last added song from the queue. |
-| `!autoplay` | `!ap` | Toggle infinite autoplay for related recommendations. |
-| `!loop [count]` | `!l`, `!repeat` | Repeat the current track indefinitely or N times. |
-| `!stop` | | Stop playback, clear the queue, and restore voice mute. |
-| `!skip` | `!s`, `!next` | Skip to the next song in the queue. |
-| `!jump <index>` | `!j`, `!skipto` | Jump to a specific song in the queue. |
-| `!pause` | | Pause current playback. |
-| `!resume` | | Resume paused playback. |
-| `!queue [page]` | `!q` | View currently playing track and upcoming songs. |
-| `!nowplaying` | `!np` | View details and link of the current track. |
-| `!volume <0-100>` | `!vol` | Adjust playback volume. |
-| `!join [id]` | `!move`, `!connect` | Move bot to user's voice channel or specified channel ID (admins only). |
-| `!leave` | `!dc`, `!disconnect` | Disconnect bot from voice and clear saved state (admins only). |
-| `!help` | `!h` | Display the list of music commands. |
+| `TOKEN` | *(required)* | Your Discord user token. |
+| `GUILD_ID` | *(required)* | Target server (guild) ID. |
+| `CHANNEL_ID` | *(required)* | Target voice channel ID. |
+| `STATUS` | `dnd` | Online status (`online`, `idle`, `dnd`, `invisible`). |
+| `SELF_MUTE` | `True` | Mute yourself in the voice channel. |
+| `SELF_DEAF` | `False` | Deafen yourself in the voice channel. |
+| `LOG_LEVEL` | `info` | Minimum log level (`debug`, `info`, `warn`, `error`). |
+| `AUTO_WATCH_STREAM` | `True` | Automatically watch screen shares / Go Live streams in the channel. |
 
-### 🔒 Access Control & Restrictions
+### Voice Limit
 
-- **Same Voice Channel Requirement**: Any server member can run music commands (`play`, `search`, `skip`, `pause`, `help`, etc.) as long as they are in the exact same voice channel as the bot. If not in the same voice channel, commands are silently ignored.
-- **Voice Admin Whitelist (`VOICE_ALLOWED_USER_IDS`)**: Comma-separated Discord user IDs allowed to run voice management commands (`join`, `leave`). Unauthorized attempts are silently ignored.
+| Variable | Default | Description |
+|---|---|---|
+| `VOICE_LIMIT` | `0` | Max users before leaving (0 = disabled). Leaves if count > limit, rejoins when count < limit. |
+
+### Auto-Reply (Static)
+
+| Variable | Default | Description |
+|---|---|---|
+| `AUTO_REPLY` | `False` | Enable/disable static auto-reply. |
+| `REPLY_TRIGGER` | `hey wake up!` | Trigger phrase (case-insensitive) to send the reply. |
+| `REPLY_MESSAGE` | `yes` | Static reply message content. |
+| `REPLY_DELAY` | `5` | Seconds to wait before replying. |
+
+## 🏗️ Project Architecture
+
+```
+always-voice-bot/
+├── src/
+│   ├── index.ts                # Application entry point & process signal handling
+│   ├── bot.ts                  # Bot orchestrator connecting modules
+│   ├── config/
+│   │   └── index.ts            # Environment loader & typed config parser
+│   ├── constants/
+│   │   └── discord.ts          # Gateway opcodes, URLs, and intents
+│   ├── cache/
+│   │   └── entity-cache.ts     # In-memory channel and username resolver
+│   ├── gateway/
+│   │   ├── gateway-client.ts   # Discord Gateway WSS client (v10) & event emitter
+│   │   └── heartbeat.ts        # Heartbeat manager (OP 1)
+│   ├── voice/
+│   │   └── voice-manager.ts    # Voice channel join/leave logic
+│   ├── features/
+│   │   ├── auto-reply.ts       # Mention-based static auto-reply service
+│   │   └── stream-watcher.ts   # Go Live / Screen share auto-viewer (OP 20)
+│   ├── logger/
+│   │   └── index.ts            # Colorized timestamped scoped logger
+│   └── types/
+│       ├── config.ts           # Bot configuration interfaces
+│       └── discord.ts          # Discord Gateway and event payload types
+├── Dockerfile                  # Multi-stage container image (Node.js 22 Alpine)
+├── docker-compose.yml          # Docker Compose orchestration
+├── Makefile                    # Workflow command automation
+├── package.json                # Project dependencies & scripts
+└── tsconfig.json               # TypeScript compiler configuration
+```
+
+### Fail-Fast Strategy
+
+The bot deliberately avoids complex nested retry loops. Fatal gateway states or unhandled network crashes trigger immediate process termination (`process.exit(1)`). When deployed in Docker, `restart: unless-stopped` provides instant, clean recovery.
+
+| Event | Action |
+|---|---|
+| OP 7 (Reconnect) | `process.exit(1)` → Docker restart |
+| OP 9 (Invalid Session) | `process.exit(1)` → Docker restart |
+| WebSocket closed unexpectedly | `process.exit(1)` → Docker restart |
+| Voice disconnected | Auto-rejoins after a 5-second delay |
+
+## ⚠️ Disclaimer
+
+This is a **self-bot** that uses a Discord user account token for automation. Automating user accounts violates [Discord's Terms of Service](https://discord.com/terms). Use at your own risk.
+
+## 📄 License
+
+This project is for personal and educational use only.

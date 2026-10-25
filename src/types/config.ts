@@ -1,21 +1,10 @@
 export type OnlineStatus = 'online' | 'idle' | 'dnd' | 'invisible';
 
-export interface MusicConfig {
-  enabled: boolean;
-  prefix: string;
-  nodelinkHost: string;
-  nodelinkPort: number;
-  nodelinkPassword: string;
-  nodelinkSecure: boolean;
-}
-
 export interface BotConfig {
   token: string;
   guildId: string;
   channelId: string;
   voiceLimit: number;
-  voiceAllowedUserIds: string[];
-  musicAllowedUserIds: string[];
   status: OnlineStatus;
   selfMute: boolean;
   selfDeaf: boolean;
@@ -26,9 +15,5 @@ export interface BotConfig {
     trigger: string;
     message: string;
     delaySeconds: number;
-    undeafenMinSeconds: number;
-    undeafenMaxSeconds: number;
   };
-
-  music: MusicConfig;
 }

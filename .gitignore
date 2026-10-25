@@ -7,11 +7,6 @@ node_modules/
 # Build
 dist/
 
-# Persistent Data
-data/*
-!data/.gitkeep
-voice-state.json
-
 # Logs
 logs/
 *.log
@@ -29,6 +24,11 @@ __pycache__/
 *.swp
 *.swo
 *~
+
+# AI Agent scaffolding
+.agents/
+.gemini/
+skills/
 
 # OS
 .DS_Store

@@ -1,7 +1,6 @@
 import type { BotConfig } from '../types/config.js';
 import type { GuildCreateData, StreamCreateData, StreamDeleteData, VoiceState } from '../types/discord.js';
 import type { EntityCache } from '../cache/entity-cache.js';
-import type { VoiceManager } from '../voice/voice-manager.js';
 import { GATEWAY_OPCODES } from '../constants/discord.js';
 import { createLogger } from '../logger/index.js';
 
@@ -16,31 +15,16 @@ export class StreamWatcherService {
   private readonly config: BotConfig;
   private readonly sender: StreamGatewaySender;
   private readonly cache?: EntityCache;
-  private readonly voiceManager?: VoiceManager;
   private readonly activeStreams: Set<string> = new Set();
 
   constructor(
     config: BotConfig,
     sender: StreamGatewaySender,
-    cache?: EntityCache,
-    voiceManager?: VoiceManager
+    cache?: EntityCache
   ) {
     this.config = config;
     this.sender = sender;
     this.cache = cache;
-    this.voiceManager = voiceManager;
-  }
-
-  private getTargetChannelId(): string {
-    return (
-      this.voiceManager?.getCurrentBotChannelId() ||
-      this.voiceManager?.getTargetChannelId() ||
-      this.config.channelId
-    );
-  }
-
-  private getGuildId(): string {
-    return this.voiceManager?.getGuildId() || this.config.guildId;
   }
 
   private extractStreamerId(streamKey: string): string {
@@ -49,12 +33,11 @@ export class StreamWatcherService {
   }
 
   public handleGuildCreate(data: GuildCreateData, botUserId: string | null): void {
-    const currentGuildId = this.getGuildId();
-    if (!this.config.autoWatchStream || (currentGuildId && data.id !== currentGuildId)) {
+    if (!this.config.autoWatchStream || data.id !== this.config.guildId) {
       return;
     }
 
-    const targetChannel = this.getTargetChannelId();
+    const targetChannel = this.config.channelId;
     if (!targetChannel) {
       return;
     }
@@ -75,8 +58,7 @@ export class StreamWatcherService {
       return;
     }
 
-    const targetChannel = this.getTargetChannelId();
-    const currentGuildId = this.getGuildId();
+    const targetChannel = this.config.channelId;
     if (!targetChannel) {
       return;
     }
@@ -85,7 +67,7 @@ export class StreamWatcherService {
     if (parts[0] === 'guild') {
       const [, guildId, channelId, streamerId] = parts;
 
-      if ((!currentGuildId || guildId === currentGuildId) && channelId === targetChannel) {
+      if (guildId === this.config.guildId && channelId === targetChannel) {
         if (botUserId && streamerId === botUserId) {
           return;
         }
@@ -118,13 +100,12 @@ export class StreamWatcherService {
       return;
     }
 
-    const targetChannel = this.getTargetChannelId();
-    const currentGuildId = this.getGuildId();
+    const targetChannel = this.config.channelId;
     if (!targetChannel) {
       return;
     }
 
-    const targetKey = `guild:${currentGuildId || data.guild_id}:${targetChannel}:${data.user_id}`;
+    const targetKey = `guild:${this.config.guildId}:${targetChannel}:${data.user_id}`;
 
     // User is in target voice channel and streaming
     if (data.channel_id === targetChannel && data.self_stream) {

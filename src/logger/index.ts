@@ -52,7 +52,7 @@ export interface ScopedLogger {
   success(message: string): void;
 }
 
-export function log(level: LogLevel, scopeOrMessage: string, message?: string): void {
+function log(level: LogLevel, scopeOrMessage: string, message?: string): void {
   const activeLevel = getActiveLogLevel();
   if (LOG_LEVEL_PRIORITY[level] < activeLevel) {
     return;

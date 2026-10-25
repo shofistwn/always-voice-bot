@@ -3,7 +3,6 @@ import type { GuildCreateData, VoiceState } from '../types/discord.js';
 import type { EntityCache } from '../cache/entity-cache.js';
 import { GATEWAY_OPCODES } from '../constants/discord.js';
 import { createLogger } from '../logger/index.js';
-import { voiceStateStore } from '../config/voice-state.js';
 
 const logger = createLogger('Voice');
 
@@ -16,15 +15,10 @@ export class VoiceManager {
   private readonly config: BotConfig;
   private readonly sender: VoiceGatewaySender;
   private readonly cache?: EntityCache;
-  private guildId: string;
-  private targetChannelId: string;
   private isInVoice: boolean = false;
-  private currentBotChannelId: string | null = null;
-  private readonly userVoiceChannels: Map<string, string> = new Map();
   private voiceUsers: Set<string> = new Set();
   private lastJoinAttempt: number = 0;
   private rejoinTimer: NodeJS.Timeout | null = null;
-  private deafenTimer: NodeJS.Timeout | null = null;
   private currentSelfDeaf: boolean;
   private currentSelfMute: boolean;
 
@@ -32,157 +26,26 @@ export class VoiceManager {
     this.config = config;
     this.sender = sender;
     this.cache = cache;
-    this.guildId = voiceStateStore.guildId || config.guildId;
-    this.targetChannelId = voiceStateStore.channelId;
-    this.currentSelfDeaf = config.music.enabled ? false : config.selfDeaf;
-    this.currentSelfMute = config.music.enabled ? false : config.selfMute;
-  }
-
-  public getGuildId(): string {
-    return this.guildId;
-  }
-
-  public setGuildId(guildId: string): void {
-    if (guildId && this.guildId !== guildId) {
-      this.guildId = guildId;
-      voiceStateStore.setGuildId(guildId);
-    }
-  }
-
-  public getInVoice(): boolean {
-    return this.isInVoice;
+    this.currentSelfDeaf = config.selfDeaf;
+    this.currentSelfMute = config.selfMute;
   }
 
   public setInVoice(val: boolean): void {
     this.isInVoice = val;
-    if (!val) {
-      this.currentBotChannelId = null;
-    }
-  }
-
-  public getTargetChannelId(): string {
-    return this.targetChannelId;
-  }
-
-  public getCurrentBotChannelId(): string | null {
-    return this.isInVoice ? (this.currentBotChannelId || this.targetChannelId) : null;
-  }
-
-  public getUserVoiceChannelId(userId: string, guildId?: string): string | null {
-    const targetGuild = guildId || this.guildId;
-    if (targetGuild) {
-      const scoped = this.userVoiceChannels.get(`${targetGuild}:${userId}`);
-      if (scoped) return scoped;
-    }
-    return this.userVoiceChannels.get(userId) ?? null;
-  }
-
-  public isUserInSameVoice(userId: string, guildId?: string): boolean {
-    const botGuild = this.getGuildId();
-    // Must be in the exact same server (guild) as the bot
-    if (guildId && botGuild && guildId !== botGuild) {
-      return false;
-    }
-
-    const botChannel = this.getCurrentBotChannelId();
-    if (!botChannel) return false;
-
-    const userChannel = this.getUserVoiceChannelId(userId, guildId || botGuild);
-    if (userChannel && userChannel === botChannel) {
-      return true;
-    }
-
-    if ((!guildId || guildId === botGuild) && this.voiceUsers.has(userId)) {
-      return true;
-    }
-
-    return false;
   }
 
   public resetJoinAttempt(): void {
     this.lastJoinAttempt = 0;
   }
 
-  public setDeaf(deaf: boolean): void {
-    if (this.config.music.enabled && deaf) {
-      return;
-    }
-    this.currentSelfDeaf = deaf;
-    const targetChannel = this.currentBotChannelId || this.targetChannelId;
-    if (this.sender.isConnected() && this.isInVoice && targetChannel && this.guildId) {
-      try {
-        this.sender.sendOp(GATEWAY_OPCODES.VOICE_STATE_UPDATE, {
-          guild_id: this.guildId,
-          channel_id: targetChannel,
-          self_mute: this.currentSelfMute,
-          self_deaf: deaf,
-        });
-      } catch (error) {
-        logger.error(`Failed to update deaf state: ${(error as Error).message}`);
-      }
-    }
-  }
-
-  public setMute(mute: boolean): void {
-    if (this.config.music.enabled && mute) {
-      return;
-    }
-    this.currentSelfMute = mute;
-    const targetChannel = this.currentBotChannelId || this.targetChannelId;
-    if (this.sender.isConnected() && this.isInVoice && targetChannel && this.guildId) {
-      try {
-        this.sender.sendOp(GATEWAY_OPCODES.VOICE_STATE_UPDATE, {
-          guild_id: this.guildId,
-          channel_id: targetChannel,
-          self_mute: mute,
-          self_deaf: this.currentSelfDeaf,
-        });
-      } catch (error) {
-        logger.error(`Failed to update mute state: ${(error as Error).message}`);
-      }
-    }
-  }
-
-  public restoreMute(): void {
-    if (this.config.music.enabled) {
-      return;
-    }
-    this.setMute(this.config.selfMute);
-  }
-
-  public temporaryUndeafen(minSeconds = 300, maxSeconds = 900): void {
-    if (!this.config.selfDeaf || this.config.music.enabled) {
-      return;
-    }
-
-    if (this.deafenTimer) {
-      clearTimeout(this.deafenTimer);
-      this.deafenTimer = null;
-    }
-
-    const duration = Math.floor(Math.random() * (maxSeconds - minSeconds + 1)) + minSeconds;
-    this.setDeaf(false);
-
-    const durationDisplay = duration >= 60 ? `${(duration / 60).toFixed(1)}m` : `${duration}s`;
-    logger.info(`Undeafened (woken up). Re-deafening in ${durationDisplay}...`);
-
-    this.deafenTimer = setTimeout(() => {
-      this.deafenTimer = null;
-      if (this.config.selfDeaf && !this.config.music.enabled) {
-        this.setDeaf(true);
-        logger.info('Re-deafened (sleep mode restored).');
-      }
-    }, duration * 1000);
-  }
-
-  public joinVoice(overrideChannelId?: string): void {
-    const channelId = overrideChannelId || this.targetChannelId;
+  public joinVoice(): void {
+    const channelId = this.config.channelId;
     if (!channelId) {
-      logger.info('No voice channel configured in voice-state.json. Skipping voice connection.');
+      logger.error('Missing CHANNEL_ID in environment variables. Cannot join voice.');
       return;
     }
-    if (!this.guildId) {
-      logger.info('No guild ID determined yet. Waiting for guild discovery.');
+    if (!this.config.guildId) {
+      logger.error('Missing GUILD_ID in environment variables. Cannot join voice.');
       return;
     }
     if (!this.sender.isConnected()) {
@@ -191,14 +54,14 @@ export class VoiceManager {
     }
 
     const now = Date.now();
-    if (now - this.lastJoinAttempt < 10_000 && !overrideChannelId) {
+    if (now - this.lastJoinAttempt < 10_000) {
       return;
     }
     this.lastJoinAttempt = now;
 
     try {
       this.sender.sendOp(GATEWAY_OPCODES.VOICE_STATE_UPDATE, {
-        guild_id: this.guildId,
+        guild_id: this.config.guildId,
         channel_id: channelId,
         self_mute: this.currentSelfMute,
         self_deaf: this.currentSelfDeaf,
@@ -212,67 +75,24 @@ export class VoiceManager {
     }
   }
 
-  public switchChannel(newChannelId: string, guildId?: string): void {
-    if (!newChannelId) return;
-
-    if (guildId) {
-      this.guildId = guildId;
-    }
-    this.targetChannelId = newChannelId;
-    voiceStateStore.setChannelId(newChannelId, this.guildId);
-
-    // Re-filter voice users in the target channel
-    this.voiceUsers.clear();
-    for (const [userId, chId] of this.userVoiceChannels.entries()) {
-      if (chId === newChannelId) {
-        this.voiceUsers.add(userId);
-      }
-    }
-
-    if (this.sender.isConnected() && this.guildId) {
-      try {
-        this.lastJoinAttempt = 0;
-        this.sender.sendOp(GATEWAY_OPCODES.VOICE_STATE_UPDATE, {
-          guild_id: this.guildId,
-          channel_id: newChannelId,
-          self_mute: this.currentSelfMute,
-          self_deaf: this.currentSelfDeaf,
-        });
-
-        const channelName = this.cache?.getChannelName(newChannelId) ?? newChannelId;
-        logger.info(`Switched voice channel to ${channelName}.`);
-        this.lastJoinAttempt = Date.now();
-      } catch (error) {
-        logger.error(`Failed to switch voice channel: ${(error as Error).message}`);
-      }
-    }
-  }
-
-  public leaveVoice(clearState: boolean = false): void {
+  public leaveVoice(): void {
     if (this.rejoinTimer) {
       clearTimeout(this.rejoinTimer);
       this.rejoinTimer = null;
     }
 
-    if (clearState) {
-      this.targetChannelId = '';
-      this.voiceUsers.clear();
-      voiceStateStore.clear();
-    }
-
-    if (this.sender.isConnected() && this.isInVoice && this.guildId) {
+    if (this.sender.isConnected() && this.isInVoice && this.config.guildId) {
       try {
         this.isInVoice = false;
-        this.currentBotChannelId = null;
         this.sender.sendOp(GATEWAY_OPCODES.VOICE_STATE_UPDATE, {
-          guild_id: this.guildId,
+          guild_id: this.config.guildId,
           channel_id: null,
           self_mute: false,
           self_deaf: false,
         });
 
-        const channelName = this.targetChannelId
-          ? this.cache?.getChannelName(this.targetChannelId) ?? this.targetChannelId
+        const channelName = this.config.channelId
+          ? this.cache?.getChannelName(this.config.channelId) ?? this.config.channelId
           : 'voice';
         logger.info(`Left ${channelName}.`);
       } catch (error) {
@@ -283,7 +103,7 @@ export class VoiceManager {
   }
 
   public checkVoiceLimit(): void {
-    if (this.config.music.enabled || this.config.voiceLimit === 0 || !this.targetChannelId) {
+    if (this.config.voiceLimit === 0 || !this.config.channelId) {
       return;
     }
 
@@ -296,38 +116,27 @@ export class VoiceManager {
     } else if (currentCount > this.config.voiceLimit) {
       if (this.isInVoice) {
         logger.warn(`Voice limit exceeded (${currentCount}/${this.config.voiceLimit}). Leaving...`);
-        this.leaveVoice(false);
+        this.leaveVoice();
       }
     }
   }
 
   public handleGuildCreate(data: GuildCreateData, botUserId?: string | null): void {
-    if (!this.guildId) {
-      this.guildId = data.id;
-      voiceStateStore.setGuildId(data.id);
+    if (data.id !== this.config.guildId) {
+      return;
     }
 
-    // Always track user voice states across guilds
+    this.voiceUsers.clear();
     for (const vs of data.voice_states ?? []) {
-      if (vs.channel_id) {
-        this.userVoiceChannels.set(`${data.id}:${vs.user_id}`, vs.channel_id);
-        this.userVoiceChannels.set(vs.user_id, vs.channel_id);
+      if (vs.channel_id === this.config.channelId) {
         if (botUserId && vs.user_id === botUserId) {
-          this.currentBotChannelId = vs.channel_id;
           this.isInVoice = true;
-          this.guildId = data.id;
-          voiceStateStore.setGuildId(data.id);
         }
-        const activeTarget = this.currentBotChannelId || this.targetChannelId;
-        if (activeTarget && vs.channel_id === activeTarget && (!this.guildId || data.id === this.guildId)) {
-          this.voiceUsers.add(vs.user_id);
-        }
+        this.voiceUsers.add(vs.user_id);
       }
     }
 
-    if (data.id === this.guildId) {
-      this.checkVoiceLimit();
-    }
+    this.checkVoiceLimit();
   }
 
   public handleVoiceStateUpdate(data: VoiceState, botUserId: string | null): void {
@@ -335,36 +144,13 @@ export class VoiceManager {
       return;
     }
 
-    // Always track user voice channels (both scoped by guild and universal fallback)
-    if (data.channel_id) {
-      if (data.guild_id) {
-        this.userVoiceChannels.set(`${data.guild_id}:${data.user_id}`, data.channel_id);
-      }
-      this.userVoiceChannels.set(data.user_id, data.channel_id);
-    } else {
-      if (data.guild_id) {
-        this.userVoiceChannels.delete(`${data.guild_id}:${data.user_id}`);
-      }
-      this.userVoiceChannels.delete(data.user_id);
-    }
-
     // Handle bot's own voice state
     if (data.user_id === botUserId) {
       const wasInVoice = this.isInVoice;
-      this.currentBotChannelId = data.channel_id;
       this.isInVoice = Boolean(data.channel_id);
 
-      if (data.guild_id) {
-        this.guildId = data.guild_id;
-        voiceStateStore.setGuildId(data.guild_id);
-      }
-      if (data.channel_id) {
-        this.targetChannelId = data.channel_id;
-        voiceStateStore.setChannelId(data.channel_id, data.guild_id);
-      }
-
       if (wasInVoice && !this.isInVoice) {
-        if (!this.targetChannelId) return;
+        if (!this.config.channelId) return;
         logger.warn('Bot disconnected from voice. Force rejoining in 5s...');
         if (this.rejoinTimer) {
           clearTimeout(this.rejoinTimer);
@@ -379,9 +165,8 @@ export class VoiceManager {
     }
 
     // Track user counts in target channel for the active guild
-    const targetChannel = this.currentBotChannelId || this.targetChannelId;
-    const isTargetGuild = !data.guild_id || !this.guildId || data.guild_id === this.guildId;
-    if (isTargetGuild && targetChannel && data.channel_id === targetChannel) {
+    const isTargetGuild = !data.guild_id || data.guild_id === this.config.guildId;
+    if (isTargetGuild && data.channel_id === this.config.channelId) {
       this.voiceUsers.add(data.user_id);
     } else if (isTargetGuild) {
       this.voiceUsers.delete(data.user_id);
@@ -394,10 +179,6 @@ export class VoiceManager {
     if (this.rejoinTimer) {
       clearTimeout(this.rejoinTimer);
       this.rejoinTimer = null;
-    }
-    if (this.deafenTimer) {
-      clearTimeout(this.deafenTimer);
-      this.deafenTimer = null;
     }
   }
 }
