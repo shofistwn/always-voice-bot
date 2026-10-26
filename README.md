@@ -6,9 +6,9 @@ A lightweight, modular Discord self-bot written in **TypeScript** designed to ma
 
 - **Auto-Rejoin** — Reconnects automatically if disconnected from voice (with a 5-second backoff).
 - **Auto-Watch Streaming** — Automatically detects screen share / Go Live streams in the channel and watches them (OP 20 `STREAM_WATCH`) with zero video decoding overhead.
-- **Voice Limit** — Monitors channel occupancy; leaves if user count exceeds `VOICE_LIMIT`, and rejoins once it is safe.
-- **Auto-Reply (Static)** — Replies with a predefined message when mentioned with a trigger phrase.
-- **OwO Quest Assistant** — Natural language assistant for OwO bot daily quests (cookie, pray, curse) with multiplier support (`3x`, `3 kali`), 5-second battle duel auto-accept (`wb @mention`, `owob @mention`, `owo b @mention`), restart resilience, and concurrency mutex locks to prevent race conditions.
+- **Voice Limit (Total Room Capacity)** — Monitors total room capacity including the bot; checks channel occupancy pre-join on startup to avoid entering full rooms, leaves if total occupancy exceeds `VOICE_LIMIT`, and rejoins once safe (`humans + 1 <= limit`).
+- **Auto-Reply (Static)** — Replies with a predefined message when mentioned with a trigger phrase, featuring realistic typing indicator simulation and burst-mention debounce.
+- **OwO Quest Assistant** — Natural language assistant for OwO bot daily quests (cookie, pray, curse) with multiplier support (`3x`, `3 kali`), 5-second battle duel auto-accept (`wb @mention`, `w b @mention`, `owob @mention`, `owo b @mention`, `owo battle @mention`, `w battle @mention`), restart resilience, multi-user round-robin fair scheduling, typing indicators, and concurrency mutex locks.
 - **Modular TypeScript Architecture** — Decoupled modules for Gateway, Voice, Auto-Reply, Stream Watcher, OwO Assistant, Cache, and Configuration.
 - **Structured Scoped Logging** — Colorized, padded, scoped log output with configurable log filtering and entity name resolution.
 
@@ -77,7 +77,7 @@ All configuration is handled via environment variables in the `.env` file:
 
 | Variable | Default | Description |
 |---|---|---|
-| `VOICE_LIMIT` | `0` | Max total room capacity including bot (0 = disabled). Leaves when total > limit, rejoins when total with bot <= limit. |
+| `VOICE_LIMIT` | `0` | Max total room capacity including bot (0 = disabled). Leaves when total room occupancy > limit, and rejoins only when `humans + 1 <= limit`. Inspects occupancy before joining on startup. |
 
 ### Auto-Reply (Static)
 
@@ -86,7 +86,7 @@ All configuration is handled via environment variables in the `.env` file:
 | `AUTO_REPLY` | `False` | Enable/disable static auto-reply. |
 | `REPLY_TRIGGER` | `hey wake up!` | Trigger phrase (case-insensitive) to send the reply. |
 | `REPLY_MESSAGE` | `yes` | Static reply message content. |
-| `REPLY_DELAY` | `5` | Seconds to wait before replying. |
+| `REPLY_DELAY` | `5` | Seconds to wait before replying (displays typing indicator during delay). |
 
 ### OwO Quest Assistant
 
@@ -100,11 +100,12 @@ Mention the bot in text chat to trigger quests dynamically targeting yourself:
 - **Cookie**: `@Bot kasih gw cookie`, `@Bot bagi kue dong`, `@Bot cookie 2x`
 - **Pray**: `@Bot bantu pray dong`, `@Bot pray gw 3x`, `@Bot bantu pray 3 kali`
 - **Curse**: `@Bot bantu curse 2x`, `@Bot tolong curse`
-- **Battle Duel Accept**: Saat ada yang mengirim `wb @Bot`, `w b @Bot`, `owob @Bot`, atau `owo b @Bot`, bot memberi jeda 5 detik lalu membalas dengan `owo ab` di channel tersebut.
+- **Battle Duel Accept**: Saat ada yang mengirim `wb @Bot`, `w b @Bot`, `owob @Bot`, `owo b @Bot`, `w battle @Bot`, atau `owo battle @Bot`, bot mensimulasikan typing indicator dan memberi jeda 5 detik lalu membalas dengan `owo ab` di channel tersebut.
 
 #### Resilience & Cooldown Handling
 - **Restart Resilience**: Queue progress and `nextRun` timestamps are persistently stored in `owo-queue.json`. If the bot restarts or crashes mid-queue, pending tasks resume accurately based on elapsed cooldown time.
-- **Race Condition Prevention**: Employs an execution mutex and global cooldown tracking so that pray/curse commands respect OwO's 5-minute cooldown pool without concurrent conflict.
+- **Race Condition Prevention & Mutex**: Employs an execution mutex lock and global cooldown tracking so that pray/curse commands respect OwO's 5-minute cooldown pool without concurrent conflict.
+- **Multi-User Fair Scheduling**: Requests from multiple users are tracked independently (`userId:action`) and dispatched in a round-robin sequence to ensure fairness without starvation.
 - **Humanized Simulation**: Random jitter (5–15s) and realistic Discord typing indicators are simulated prior to sending commands.
 
 ## 🏗️ Project Architecture
