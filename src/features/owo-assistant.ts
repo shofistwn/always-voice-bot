@@ -82,16 +82,22 @@ export class OwoAssistantService {
     const parts: string[] = [message.content || ''];
     if (message.embeds && Array.isArray(message.embeds)) {
       for (const embed of message.embeds) {
+        if (embed.author?.name) parts.push(embed.author.name);
         if (embed.title) parts.push(embed.title);
         if (embed.description) parts.push(embed.description);
-        if (embed.author?.name) parts.push(embed.author.name);
+        if (embed.fields && Array.isArray(embed.fields)) {
+          for (const field of embed.fields) {
+            if (field.name) parts.push(field.name);
+            if (field.value) parts.push(field.value);
+          }
+        }
         if (embed.footer?.text) parts.push(embed.footer.text);
       }
     }
     const fullText = parts.join(' ').toLowerCase();
 
     // Check if target is this bot:
-    // 1. In message.mentions
+    // 1. In message.mentions (e.g. "@Velares" in message.content)
     // 2. Contains bot numeric ID
     // 3. Contains bot username
     // 4. Contains bot display name (global_name)
@@ -101,12 +107,23 @@ export class OwoAssistantService {
       (botUser.username && fullText.includes(botUser.username.toLowerCase())) ||
       (botUser.global_name && fullText.includes(botUser.global_name.toLowerCase()));
 
-    // Check if message is a battle challenge from OwO
-    // OwO battle prompt patterns:
-    // - "has challenged ... to a battle!"
-    // - "type `owo ab` to accept" / "type `owoab` to accept" / "`owo db`"
-    const hasBattleKeyword = fullText.includes('battle') || fullText.includes('challenged');
-    const hasAcceptKeyword = fullText.includes('owo ab') || fullText.includes('owoab') || fullText.includes('accept') || fullText.includes('db');
+    // Check if message is a battle/duel challenge from OwO
+    // OwO prompt patterns (as seen in screenshot):
+    // - "Velares, opit challenges you to a duel!"
+    // - "`owo ab` to accept the battle!"
+    // - "`owo db` to decline the battle!"
+    const hasBattleKeyword =
+      fullText.includes('battle') ||
+      fullText.includes('duel') ||
+      fullText.includes('challenges you') ||
+      fullText.includes('challenged');
+
+    const hasAcceptKeyword =
+      fullText.includes('owo ab') ||
+      fullText.includes('owoab') ||
+      fullText.includes('accept the battle') ||
+      fullText.includes('accept') ||
+      fullText.includes('db');
 
     if (isTargeted && hasBattleKeyword && hasAcceptKeyword && !this.isBattlePending) {
       this.isBattlePending = true;
