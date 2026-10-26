@@ -1,14 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { BotConfig } from '../types/config.js';
-import type { MessageCreateData, User } from '../types/discord.js';
+import type { MessageCreateData } from '../types/discord.js';
 import type { EntityCache } from '../cache/entity-cache.js';
 import { DISCORD_GATEWAY } from '../constants/discord.js';
 import { createLogger } from '../logger/index.js';
 
 const logger = createLogger('OwOAssist');
 
-const OWO_BOT_USER_ID = '408785106942164992';
 const PRAY_CURSE_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
 
 export type QuestAction = 'pray' | 'curse' | 'cookie';
@@ -56,21 +55,18 @@ export class OwoAssistantService {
     this.schedulePendingItems();
   }
 
-  public handleMessage(message: MessageCreateData, botUser: User | null): void {
-    if (!this.config.owoAssistant.enabled || !botUser) {
+  public handleMessage(message: MessageCreateData, botUserId: string | null): void {
+    if (!this.config.owoAssistant.enabled || !botUserId) {
       return;
     }
 
-    if (message.author.id === botUser.id) {
+    // Ignore messages from this bot
+    if (message.author.id === botUserId) {
       return;
     }
 
-    if (message.author.id === OWO_BOT_USER_ID) {
-      this.handleOwOBotMessage(message, botUser);
-      return;
-    }
-
-    const isMentioned = message.mentions.some((m) => m.id === botUser.id);
+    // Check if this bot is mentioned
+    const isMentioned = message.mentions.some((m) => m.id === botUserId);
     if (!isMentioned) {
       return;
     }
@@ -78,94 +74,36 @@ export class OwoAssistantService {
     this.handleUserMention(message);
   }
 
-  private handleOwOBotMessage(message: MessageCreateData, botUser: User): void {
-    const parts: string[] = [message.content || ''];
-    if (message.embeds && Array.isArray(message.embeds)) {
-      for (const embed of message.embeds) {
-        if (embed.author?.name) parts.push(embed.author.name);
-        if (embed.title) parts.push(embed.title);
-        if (embed.description) parts.push(embed.description);
-        if (embed.fields && Array.isArray(embed.fields)) {
-          for (const field of embed.fields) {
-            if (field.name) parts.push(field.name);
-            if (field.value) parts.push(field.value);
-          }
-        }
-        if (embed.footer?.text) parts.push(embed.footer.text);
-      }
-    }
-    const fullText = parts.join(' ').toLowerCase();
-
-    // Check if target is this bot:
-    // 1. In message.mentions (e.g. "@Velares" in message.content)
-    // 2. Contains bot numeric ID
-    // 3. Contains bot username
-    // 4. Contains bot display name (global_name)
-    const isTargeted =
-      message.mentions.some((m) => m.id === botUser.id) ||
-      fullText.includes(botUser.id) ||
-      (botUser.username && fullText.includes(botUser.username.toLowerCase())) ||
-      (botUser.global_name && fullText.includes(botUser.global_name.toLowerCase()));
-
-    // Check if message is a battle/duel challenge from OwO
-    // OwO prompt patterns (as seen in screenshot):
-    // - "Velares, opit challenges you to a duel!"
-    // - "`owo ab` to accept the battle!"
-    // - "`owo db` to decline the battle!"
-    const hasBattleKeyword =
-      fullText.includes('battle') ||
-      fullText.includes('duel') ||
-      fullText.includes('challenges you') ||
-      fullText.includes('challenged');
-
-    const hasAcceptKeyword =
-      fullText.includes('owo ab') ||
-      fullText.includes('owoab') ||
-      fullText.includes('accept the battle') ||
-      fullText.includes('accept') ||
-      fullText.includes('db');
-
-    if (isTargeted && hasBattleKeyword && hasAcceptKeyword && !this.isBattlePending) {
-      this.isBattlePending = true;
-      logger.info('Battle challenge detected from OwO Bot! Auto-accepting in 1.5–3s...');
-      const delay = Math.floor(Math.random() * 1500) + 1500;
-
-      setTimeout(async () => {
-        try {
-          if (this.isDestroyed) return;
-          await this.sendTypingIndicator(message.channel_id);
-          await this.sendMessage(message.channel_id, 'owo ab');
-          logger.success('Sent "owo ab" to accept battle challenge!');
-        } finally {
-          this.isBattlePending = false;
-        }
-      }, delay);
-    }
-  }
-
   private handleUserMention(message: MessageCreateData): void {
     const rawContent = (message.content || '').toLowerCase();
     const authorId = message.author.id;
     const channelId = message.channel_id;
 
-    // Check for manual battle accept trigger via mention
-    // e.g. "@Bot owoab", "@Bot owo ab", "@Bot terima battle", "@Bot accept battle"
-    const isManualBattleAccept =
-      rawContent.includes('owoab') ||
-      rawContent.includes('owo ab') ||
-      rawContent.includes('terima battle') ||
-      rawContent.includes('accept battle');
+    // Check for battle triggers: wb @mention, owob @mention, owo b @mention, owo battle @mention
+    const isBattleTrigger = /\b(wb|owob|owo\s+b|owo\s+battle|battle)\b/.test(rawContent);
 
-    if (isManualBattleAccept) {
-      logger.info(`Received manual battle accept trigger from ${message.author.username}`);
-      void (async () => {
-        await this.sendTypingIndicator(channelId);
-        await this.sendMessage(channelId, 'owo ab');
-        logger.success('Sent "owo ab" to accept battle!');
-      })();
+    if (isBattleTrigger) {
+      if (this.isBattlePending) return;
+      this.isBattlePending = true;
+
+      logger.info(
+        `Battle challenge detected from ${message.author.username} ("${message.content}"). Responding with "owo ab" in 5s...`
+      );
+
+      setTimeout(async () => {
+        try {
+          if (this.isDestroyed) return;
+          await this.sendTypingIndicator(channelId);
+          await this.sendMessage(channelId, 'owo ab');
+          logger.success(`Sent "owo ab" in response to battle trigger from ${message.author.username}!`);
+        } finally {
+          this.isBattlePending = false;
+        }
+      }, 5000);
       return;
     }
 
+    // Detect quest intent (cookie, pray, curse)
     let action: QuestAction | null = null;
     if (rawContent.includes('cookie') || rawContent.includes('kue')) {
       action = 'cookie';

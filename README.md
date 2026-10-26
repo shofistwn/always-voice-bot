@@ -8,7 +8,7 @@ A lightweight, modular Discord self-bot written in **TypeScript** designed to ma
 - **Auto-Watch Streaming** — Automatically detects screen share / Go Live streams in the channel and watches them (OP 20 `STREAM_WATCH`) with zero video decoding overhead.
 - **Voice Limit** — Monitors channel occupancy; leaves if user count exceeds `VOICE_LIMIT`, and rejoins once it is safe.
 - **Auto-Reply (Static)** — Replies with a predefined message when mentioned with a trigger phrase.
-- **OwO Quest Assistant** — Natural language assistant for OwO bot daily quests (cookie, pray, curse) with multiplier support (`3x`, `3 kali`), battle challenge auto-accept (`owoab`), restart resilience, and concurrency mutex locks to prevent race conditions.
+- **OwO Quest Assistant** — Natural language assistant for OwO bot daily quests (cookie, pray, curse) with multiplier support (`3x`, `3 kali`), 5-second battle duel auto-accept (`wb @mention`, `owob @mention`, `owo b @mention`), restart resilience, and concurrency mutex locks to prevent race conditions.
 - **Modular TypeScript Architecture** — Decoupled modules for Gateway, Voice, Auto-Reply, Stream Watcher, OwO Assistant, Cache, and Configuration.
 - **Structured Scoped Logging** — Colorized, padded, scoped log output with configurable log filtering and entity name resolution.
 
@@ -100,7 +100,7 @@ Mention the bot in text chat to trigger quests dynamically targeting yourself:
 - **Cookie**: `@Bot kasih gw cookie`, `@Bot bagi kue dong`, `@Bot cookie 2x`
 - **Pray**: `@Bot bantu pray dong`, `@Bot pray gw 3x`, `@Bot bantu pray 3 kali`
 - **Curse**: `@Bot bantu curse 2x`, `@Bot tolong curse`
-- **Battle Auto-Accept**: When OwO bot tags this bot for a battle challenge (`owoab`), the bot simulates typing and automatically accepts the battle in that channel.
+- **Battle Duel Accept**: Saat ada yang mengirim `wb @Bot`, `owob @Bot`, atau `owo b @Bot`, bot memberi jeda 5 detik lalu membalas dengan `owo ab` di channel tersebut.
 
 #### Resilience & Cooldown Handling
 - **Restart Resilience**: Queue progress and `nextRun` timestamps are persistently stored in `owo-queue.json`. If the bot restarts or crashes mid-queue, pending tasks resume accurately based on elapsed cooldown time.
