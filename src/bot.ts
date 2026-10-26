@@ -1,4 +1,5 @@
 import type { BotConfig } from './types/config.js';
+import type { User } from './types/discord.js';
 import { GatewayClient } from './gateway/gateway-client.js';
 import { VoiceManager } from './voice/voice-manager.js';
 import { EntityCache } from './cache/entity-cache.js';
@@ -18,6 +19,7 @@ export class AlwaysVoiceBot {
   private readonly streamWatcher: StreamWatcherService;
   private readonly owoAssistant: OwoAssistantService;
 
+  private botUser: User | null = null;
   private botUserId: string | null = null;
 
   constructor(config: BotConfig) {
@@ -34,6 +36,7 @@ export class AlwaysVoiceBot {
 
   private registerEventListeners(): void {
     this.gateway.on('ready', (data) => {
+      this.botUser = data.user;
       this.botUserId = data.user.id;
 
       this.cache.handleReady(data);
@@ -59,7 +62,7 @@ export class AlwaysVoiceBot {
     this.gateway.on('messageCreate', (data) => {
       this.cache.handleMessageCreate(data);
       this.autoReply.handleMessage(data, this.botUserId);
-      this.owoAssistant.handleMessage(data, this.botUserId);
+      this.owoAssistant.handleMessage(data, this.botUser);
     });
 
     this.gateway.on('streamCreate', (data) => {

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { BotConfig } from '../types/config.js';
-import type { MessageCreateData } from '../types/discord.js';
+import type { MessageCreateData, User } from '../types/discord.js';
 import type { EntityCache } from '../cache/entity-cache.js';
 import { DISCORD_GATEWAY } from '../constants/discord.js';
 import { createLogger } from '../logger/index.js';
@@ -56,21 +56,21 @@ export class OwoAssistantService {
     this.schedulePendingItems();
   }
 
-  public handleMessage(message: MessageCreateData, botUserId: string | null): void {
-    if (!this.config.owoAssistant.enabled || !botUserId) {
+  public handleMessage(message: MessageCreateData, botUser: User | null): void {
+    if (!this.config.owoAssistant.enabled || !botUser) {
       return;
     }
 
-    if (message.author.id === botUserId) {
+    if (message.author.id === botUser.id) {
       return;
     }
 
     if (message.author.id === OWO_BOT_USER_ID) {
-      this.handleOwOBotMessage(message, botUserId);
+      this.handleOwOBotMessage(message, botUser);
       return;
     }
 
-    const isMentioned = message.mentions.some((m) => m.id === botUserId);
+    const isMentioned = message.mentions.some((m) => m.id === botUser.id);
     if (!isMentioned) {
       return;
     }
@@ -78,23 +78,47 @@ export class OwoAssistantService {
     this.handleUserMention(message);
   }
 
-  private handleOwOBotMessage(message: MessageCreateData, botUserId: string): void {
-    const content = message.content || '';
-    const mentionsBot = message.mentions.some((m) => m.id === botUserId) || content.includes(botUserId);
-    const isBattleChallenge = content.toLowerCase().includes('owoab') &&
-      (content.toLowerCase().includes('battle') || content.toLowerCase().includes('challenge'));
+  private handleOwOBotMessage(message: MessageCreateData, botUser: User): void {
+    const parts: string[] = [message.content || ''];
+    if (message.embeds && Array.isArray(message.embeds)) {
+      for (const embed of message.embeds) {
+        if (embed.title) parts.push(embed.title);
+        if (embed.description) parts.push(embed.description);
+        if (embed.author?.name) parts.push(embed.author.name);
+        if (embed.footer?.text) parts.push(embed.footer.text);
+      }
+    }
+    const fullText = parts.join(' ').toLowerCase();
 
-    if (mentionsBot && isBattleChallenge && !this.isBattlePending) {
+    // Check if target is this bot:
+    // 1. In message.mentions
+    // 2. Contains bot numeric ID
+    // 3. Contains bot username
+    // 4. Contains bot display name (global_name)
+    const isTargeted =
+      message.mentions.some((m) => m.id === botUser.id) ||
+      fullText.includes(botUser.id) ||
+      (botUser.username && fullText.includes(botUser.username.toLowerCase())) ||
+      (botUser.global_name && fullText.includes(botUser.global_name.toLowerCase()));
+
+    // Check if message is a battle challenge from OwO
+    // OwO battle prompt patterns:
+    // - "has challenged ... to a battle!"
+    // - "type `owo ab` to accept" / "type `owoab` to accept" / "`owo db`"
+    const hasBattleKeyword = fullText.includes('battle') || fullText.includes('challenged');
+    const hasAcceptKeyword = fullText.includes('owo ab') || fullText.includes('owoab') || fullText.includes('accept') || fullText.includes('db');
+
+    if (isTargeted && hasBattleKeyword && hasAcceptKeyword && !this.isBattlePending) {
       this.isBattlePending = true;
-      logger.info('Battle challenge detected! Auto-accepting in 1.5–3s...');
+      logger.info('Battle challenge detected from OwO Bot! Auto-accepting in 1.5–3s...');
       const delay = Math.floor(Math.random() * 1500) + 1500;
 
       setTimeout(async () => {
         try {
           if (this.isDestroyed) return;
           await this.sendTypingIndicator(message.channel_id);
-          await this.sendMessage(message.channel_id, 'owoab');
-          logger.success('Sent owoab to accept battle!');
+          await this.sendMessage(message.channel_id, 'owo ab');
+          logger.success('Sent "owo ab" to accept battle challenge!');
         } finally {
           this.isBattlePending = false;
         }
@@ -106,6 +130,24 @@ export class OwoAssistantService {
     const rawContent = (message.content || '').toLowerCase();
     const authorId = message.author.id;
     const channelId = message.channel_id;
+
+    // Check for manual battle accept trigger via mention
+    // e.g. "@Bot owoab", "@Bot owo ab", "@Bot terima battle", "@Bot accept battle"
+    const isManualBattleAccept =
+      rawContent.includes('owoab') ||
+      rawContent.includes('owo ab') ||
+      rawContent.includes('terima battle') ||
+      rawContent.includes('accept battle');
+
+    if (isManualBattleAccept) {
+      logger.info(`Received manual battle accept trigger from ${message.author.username}`);
+      void (async () => {
+        await this.sendTypingIndicator(channelId);
+        await this.sendMessage(channelId, 'owo ab');
+        logger.success('Sent "owo ab" to accept battle!');
+      })();
+      return;
+    }
 
     let action: QuestAction | null = null;
     if (rawContent.includes('cookie') || rawContent.includes('kue')) {

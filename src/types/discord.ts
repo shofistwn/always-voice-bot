@@ -68,6 +68,13 @@ export interface MentionUser {
   username?: string;
 }
 
+export interface MessageEmbed {
+  title?: string;
+  description?: string;
+  author?: { name?: string };
+  footer?: { text?: string };
+}
+
 export interface MessageCreateData {
   id: string;
   channel_id: string;
@@ -75,6 +82,7 @@ export interface MessageCreateData {
   author: MessageAuthor;
   content: string;
   mentions: MentionUser[];
+  embeds?: MessageEmbed[];
 }
 
 export interface StreamCreateData {
