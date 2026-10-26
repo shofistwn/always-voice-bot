@@ -77,7 +77,7 @@ All configuration is handled via environment variables in the `.env` file:
 
 | Variable | Default | Description |
 |---|---|---|
-| `VOICE_LIMIT` | `0` | Max users before leaving (0 = disabled). Leaves if count > limit, rejoins when count < limit. |
+| `VOICE_LIMIT` | `0` | Max total room capacity including bot (0 = disabled). Leaves when total > limit, rejoins when total with bot <= limit. |
 
 ### Auto-Reply (Static)
 

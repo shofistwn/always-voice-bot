@@ -107,16 +107,24 @@ export class VoiceManager {
       return;
     }
 
-    const currentCount = this.voiceUsers.size;
-    if (currentCount < this.config.voiceLimit) {
-      if (!this.isInVoice) {
-        logger.info(`Voice limit safe (${currentCount}/${this.config.voiceLimit}). Rejoining...`);
-        this.joinVoice();
-      }
-    } else if (currentCount > this.config.voiceLimit) {
+    const humanCount = this.voiceUsers.size;
+    const totalOccupants = humanCount + (this.isInVoice ? 1 : 0);
+
+    // Option 2 (Total Room Capacity): Leave if total occupants > limit
+    if (totalOccupants > this.config.voiceLimit) {
       if (this.isInVoice) {
-        logger.warn(`Voice limit exceeded (${currentCount}/${this.config.voiceLimit}). Leaving...`);
+        logger.warn(
+          `Voice limit exceeded (${totalOccupants}/${this.config.voiceLimit} total). Leaving...`
+        );
         this.leaveVoice();
+      }
+    } else if (humanCount + 1 <= this.config.voiceLimit) {
+      // Rejoin only if adding the bot stays within the room limit
+      if (!this.isInVoice) {
+        logger.info(
+          `Voice limit safe (${humanCount + 1}/${this.config.voiceLimit} with bot). Rejoining...`
+        );
+        this.joinVoice();
       }
     }
   }
