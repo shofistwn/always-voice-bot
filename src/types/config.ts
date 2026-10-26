@@ -16,4 +16,9 @@ export interface BotConfig {
     message: string;
     delaySeconds: number;
   };
+
+  owoAssistant: {
+    enabled: boolean;
+    channelId: string;
+  };
 }

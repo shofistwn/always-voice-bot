@@ -8,7 +8,8 @@ A lightweight, modular Discord self-bot written in **TypeScript** designed to ma
 - **Auto-Watch Streaming** — Automatically detects screen share / Go Live streams in the channel and watches them (OP 20 `STREAM_WATCH`) with zero video decoding overhead.
 - **Voice Limit** — Monitors channel occupancy; leaves if user count exceeds `VOICE_LIMIT`, and rejoins once it is safe.
 - **Auto-Reply (Static)** — Replies with a predefined message when mentioned with a trigger phrase.
-- **Modular TypeScript Architecture** — Decoupled modules for Gateway, Voice, Auto-Reply, Stream Watcher, Cache, and Configuration.
+- **OwO Quest Assistant** — Natural language assistant for OwO bot daily quests (cookie, pray, curse) with multiplier support (`3x`, `3 kali`), battle challenge auto-accept (`owoab`), restart resilience, and concurrency mutex locks to prevent race conditions.
+- **Modular TypeScript Architecture** — Decoupled modules for Gateway, Voice, Auto-Reply, Stream Watcher, OwO Assistant, Cache, and Configuration.
 - **Structured Scoped Logging** — Colorized, padded, scoped log output with configurable log filtering and entity name resolution.
 
 ## 🚀 Quick Start
@@ -87,6 +88,26 @@ All configuration is handled via environment variables in the `.env` file:
 | `REPLY_MESSAGE` | `yes` | Static reply message content. |
 | `REPLY_DELAY` | `5` | Seconds to wait before replying. |
 
+### OwO Quest Assistant
+
+| Variable | Default | Description |
+|---|---|---|
+| `OWO_ASSISTANT` | `True` | Enable/disable OwO Quest Assistant. |
+| `OWO_CHANNEL_ID` | *(empty)* | Optional: Restrict assistant commands to a specific text channel ID. If empty, listens in all channels. |
+
+#### Usage & Natural Commands
+
+Mention the bot in text chat to trigger quests dynamically targeting yourself:
+- **Cookie**: `@Bot kasih gw cookie`, `@Bot bagi kue dong`, `@Bot cookie 2x`
+- **Pray**: `@Bot bantu pray dong`, `@Bot pray gw 3x`, `@Bot bantu pray 3 kali`
+- **Curse**: `@Bot bantu curse 2x`, `@Bot tolong curse`
+- **Battle Auto-Accept**: When OwO bot tags this bot for a battle challenge (`owoab`), the bot simulates typing and automatically accepts the battle.
+
+#### Resilience & Cooldown Handling
+- **Restart Resilience**: Queue progress and `nextRun` timestamps are persistently stored in `owo-queue.json`. If the bot restarts or crashes mid-queue, pending tasks resume accurately based on elapsed cooldown time.
+- **Race Condition Prevention**: Employs an execution mutex and global cooldown tracking so that pray/curse commands respect OwO's 5-minute cooldown pool without concurrent conflict.
+- **Humanized Simulation**: Random jitter (5–15s) and realistic Discord typing indicators are simulated prior to sending commands.
+
 ## 🏗️ Project Architecture
 
 ```
@@ -107,6 +128,7 @@ always-voice-bot/
 │   │   └── voice-manager.ts    # Voice channel join/leave logic
 │   ├── features/
 │   │   ├── auto-reply.ts       # Mention-based static auto-reply service
+│   │   ├── owo-assistant.ts    # OwO quest helper & battle challenge auto-accept
 │   │   └── stream-watcher.ts   # Go Live / Screen share auto-viewer (OP 20)
 │   ├── logger/
 │   │   └── index.ts            # Colorized timestamped scoped logger

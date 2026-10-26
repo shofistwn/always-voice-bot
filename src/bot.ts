@@ -4,6 +4,7 @@ import { VoiceManager } from './voice/voice-manager.js';
 import { EntityCache } from './cache/entity-cache.js';
 import { AutoReplyService } from './features/auto-reply.js';
 import { StreamWatcherService } from './features/stream-watcher.js';
+import { OwoAssistantService } from './features/owo-assistant.js';
 import { createLogger } from './logger/index.js';
 
 const logger = createLogger('Bot');
@@ -15,6 +16,7 @@ export class AlwaysVoiceBot {
   private readonly cache: EntityCache;
   private readonly autoReply: AutoReplyService;
   private readonly streamWatcher: StreamWatcherService;
+  private readonly owoAssistant: OwoAssistantService;
 
   private botUserId: string | null = null;
 
@@ -25,6 +27,7 @@ export class AlwaysVoiceBot {
     this.voiceManager = new VoiceManager(config, this.gateway, this.cache);
     this.autoReply = new AutoReplyService(config, this.cache);
     this.streamWatcher = new StreamWatcherService(config, this.gateway, this.cache);
+    this.owoAssistant = new OwoAssistantService(config, this.cache);
 
     this.registerEventListeners();
   }
@@ -35,6 +38,7 @@ export class AlwaysVoiceBot {
 
       this.cache.handleReady(data);
       this.streamWatcher.handleReady(data, this.botUserId);
+      this.owoAssistant.start();
       this.voiceManager.setInVoice(false);
       this.voiceManager.resetJoinAttempt();
       this.voiceManager.joinVoice();
@@ -55,6 +59,7 @@ export class AlwaysVoiceBot {
     this.gateway.on('messageCreate', (data) => {
       this.cache.handleMessageCreate(data);
       this.autoReply.handleMessage(data, this.botUserId);
+      this.owoAssistant.handleMessage(data, this.botUserId);
     });
 
     this.gateway.on('streamCreate', (data) => {
@@ -73,6 +78,7 @@ export class AlwaysVoiceBot {
 
   public stop(): void {
     logger.info('Stopping AlwaysVoiceBot...');
+    this.owoAssistant.destroy();
     this.streamWatcher.destroy();
     this.autoReply.destroy();
     this.voiceManager.destroy();

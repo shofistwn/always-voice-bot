@@ -58,6 +58,10 @@ export function loadConfig(): BotConfig {
       message: process.env.REPLY_MESSAGE || 'yes',
       delaySeconds: parseNumber(process.env.REPLY_DELAY, 5),
     },
+    owoAssistant: {
+      enabled: parseBoolean(process.env.OWO_ASSISTANT, false),
+      channelId: (process.env.OWO_CHANNEL_ID || '').trim(),
+    },
   };
 }
 
