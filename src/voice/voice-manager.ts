@@ -131,6 +131,7 @@ export class VoiceManager {
       if (vs.channel_id === this.config.channelId) {
         if (botUserId && vs.user_id === botUserId) {
           this.isInVoice = true;
+          continue;
         }
         this.voiceUsers.add(vs.user_id);
       }

@@ -10,6 +10,7 @@ export class AutoReplyService {
   private readonly config: BotConfig;
   private readonly cache?: EntityCache;
   private readonly activeTimers: Set<NodeJS.Timeout> = new Set();
+  private readonly pendingReplyChannels: Set<string> = new Set();
 
   constructor(config: BotConfig, cache?: EntityCache) {
     this.config = config;
@@ -37,6 +38,12 @@ export class AutoReplyService {
       return;
     }
 
+    // Debounce: ignore burst mentions if a reply is already pending for this channel
+    if (this.pendingReplyChannels.has(message.channel_id)) {
+      logger.debug(`Reply already pending for channel ${message.channel_id}. Debounced.`);
+      return;
+    }
+
     logger.info(
       `Triggered by ${message.author.username}. Replying in ${this.config.autoReply.delaySeconds}s...`
     );
@@ -45,6 +52,8 @@ export class AutoReplyService {
   }
 
   private sendDelayedReply(channelId: string): void {
+    this.pendingReplyChannels.add(channelId);
+
     const delayMs = Math.max(0, this.config.autoReply.delaySeconds * 1000);
     const typingDurationMs = Math.min(2000, Math.max(1000, Math.floor(delayMs / 2)));
     const preTypingDelayMs = Math.max(0, delayMs - typingDurationMs);
@@ -81,6 +90,8 @@ export class AutoReplyService {
         }
       } catch (error) {
         logger.error(`Reply failed: ${(error as Error).message}`);
+      } finally {
+        this.pendingReplyChannels.delete(channelId);
       }
     }, preTypingDelayMs);
 
@@ -112,5 +123,6 @@ export class AutoReplyService {
       clearTimeout(timer);
     }
     this.activeTimers.clear();
+    this.pendingReplyChannels.clear();
   }
 }

@@ -35,6 +35,7 @@ export class OwoAssistantService {
   private scheduledTimers: Map<string, NodeJS.Timeout> = new Map();
   private globalNextPrayCurseRun: number = 0;
   private isProcessing: boolean = false;
+  private currentlyExecutingId: string | null = null; // Lock for active executing item
   private isBattlePending: boolean = false;
   private isSaveQueued: boolean = false;
   private isSaving: boolean = false;
@@ -79,7 +80,7 @@ export class OwoAssistantService {
     const authorId = message.author.id;
     const channelId = message.channel_id;
 
-    // Check for battle triggers: wb @mention, owob @mention, owo b @mention, owo battle @mention
+    // Check for battle triggers: wb @mention, w b @mention, owob @mention, owo b @mention, owo battle @mention
     const isBattleTrigger = /\b(wb|w\s+b|owob|owo\s+b|w\s+battle|owo\s+battle|battle)\b/.test(rawContent);
 
     if (isBattleTrigger) {
@@ -154,7 +155,8 @@ export class OwoAssistantService {
         `Accumulated quest queue for user ${userId}: action=${action}, new total=${existing.remainingCount}`
       );
 
-      if (!this.scheduledTimers.has(queueKey)) {
+      // Race condition fix: only schedule if no timer exists AND item is not currently executing
+      if (!this.scheduledTimers.has(queueKey) && this.currentlyExecutingId !== queueKey) {
         this.scheduleItem(existing);
       }
       return;
@@ -164,8 +166,16 @@ export class OwoAssistantService {
     let initialRun = now;
 
     if (action === 'pray' || action === 'curse') {
-      if (this.globalNextPrayCurseRun > now) {
-        initialRun = this.globalNextPrayCurseRun;
+      // Find latest scheduled pray/curse run to queue behind it
+      let latestPrayCurseRun = this.globalNextPrayCurseRun;
+      for (const item of this.queue.values()) {
+        if ((item.action === 'pray' || item.action === 'curse') && item.nextRun > latestPrayCurseRun) {
+          latestPrayCurseRun = item.nextRun;
+        }
+      }
+
+      if (latestPrayCurseRun > now) {
+        initialRun = latestPrayCurseRun;
       }
     }
 
@@ -241,6 +251,7 @@ export class OwoAssistantService {
     }
 
     this.isProcessing = true;
+    this.currentlyExecutingId = itemId;
 
     try {
       const item = this.queue.get(itemId);
@@ -275,22 +286,55 @@ export class OwoAssistantService {
         const jitterMs = Math.floor(Math.random() * 10000) + 5000;
 
         if (item.action === 'pray' || item.action === 'curse') {
-          this.globalNextPrayCurseRun = Date.now() + PRAY_CURSE_COOLDOWN_MS + jitterMs;
-        }
+          const cooldownInterval = PRAY_CURSE_COOLDOWN_MS + jitterMs;
+          this.globalNextPrayCurseRun = Date.now() + cooldownInterval;
 
-        if (item.remainingCount <= 0) {
-          logger.success(`Completed all ${item.action} requests for user ${item.userId}!`);
-          this.queue.delete(itemId);
+          // Round-Robin Fair Scheduling:
+          // Check for other waiting pray/curse items in queue
+          const otherPrayCurseItems: OwOQueueItem[] = [];
+          for (const [key, queuedItem] of this.queue.entries()) {
+            if (key !== itemId && (queuedItem.action === 'pray' || queuedItem.action === 'curse') && queuedItem.remainingCount > 0) {
+              otherPrayCurseItems.push(queuedItem);
+            }
+          }
+
+          if (item.remainingCount <= 0) {
+            logger.success(`Completed all ${item.action} requests for user ${item.userId}!`);
+            this.queue.delete(itemId);
+          }
+
+          if (otherPrayCurseItems.length > 0) {
+            // Give immediate next slot to the other waiting item
+            let nextSlot = this.globalNextPrayCurseRun;
+            for (const other of otherPrayCurseItems) {
+              other.nextRun = nextSlot;
+              this.scheduleItem(other);
+              nextSlot += PRAY_CURSE_COOLDOWN_MS + 5000;
+            }
+
+            // If current item still has count left, put it at the back of the line
+            if (item.remainingCount > 0) {
+              item.nextRun = nextSlot;
+              this.scheduleItem(item);
+            }
+          } else if (item.remainingCount > 0) {
+            // No other users waiting, schedule this item for next cooldown
+            item.nextRun = this.globalNextPrayCurseRun;
+            this.scheduleItem(item);
+          }
+
           this.saveQueueToFile();
         } else {
-          const nextCooldown = item.action === 'cookie' ? 10000 + jitterMs : PRAY_CURSE_COOLDOWN_MS + jitterMs;
-          item.nextRun = Date.now() + nextCooldown;
+          // Cookie
+          if (item.remainingCount <= 0) {
+            logger.success(`Completed all ${item.action} requests for user ${item.userId}!`);
+            this.queue.delete(itemId);
+          } else {
+            const nextCooldown = 10000 + jitterMs;
+            item.nextRun = Date.now() + nextCooldown;
+            this.scheduleItem(item);
+          }
           this.saveQueueToFile();
-          this.scheduleItem(item);
-        }
-
-        if (item.action === 'pray' || item.action === 'curse') {
-          this.rescheduleConflictingPrayCurse(itemId);
         }
       } else {
         logger.warn(`Failed to send ${item.action}. Retrying in 15 seconds...`);
@@ -302,20 +346,8 @@ export class OwoAssistantService {
       logger.error(`Error executing queue item ${itemId}: ${(err as Error).message}`);
     } finally {
       this.isProcessing = false;
+      this.currentlyExecutingId = null;
     }
-  }
-
-  private rescheduleConflictingPrayCurse(executedItemId: string): void {
-    for (const [key, queuedItem] of this.queue.entries()) {
-      if (key === executedItemId) continue;
-      if (queuedItem.action === 'pray' || queuedItem.action === 'curse') {
-        if (queuedItem.nextRun < this.globalNextPrayCurseRun) {
-          queuedItem.nextRun = this.globalNextPrayCurseRun;
-          this.scheduleItem(queuedItem);
-        }
-      }
-    }
-    this.saveQueueToFile();
   }
 
   private async sendTypingIndicator(channelId: string): Promise<void> {
@@ -442,6 +474,7 @@ export class OwoAssistantService {
     }
     this.scheduledTimers.clear();
     this.isProcessing = false;
+    this.currentlyExecutingId = null;
     this.isBattlePending = false;
   }
 }
