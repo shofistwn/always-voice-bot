@@ -45,13 +45,18 @@ export class AutoReplyService {
   }
 
   private sendDelayedReply(channelId: string): void {
-    const delayMs = this.config.autoReply.delaySeconds * 1000;
+    const delayMs = Math.max(0, this.config.autoReply.delaySeconds * 1000);
+    const typingDurationMs = Math.min(2000, Math.max(1000, Math.floor(delayMs / 2)));
+    const preTypingDelayMs = Math.max(0, delayMs - typingDurationMs);
 
     const timer = setTimeout(async () => {
       this.activeTimers.delete(timer);
       try {
+        await this.sendTypingIndicator(channelId);
+        await new Promise((resolve) => setTimeout(resolve, typingDurationMs));
+
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
 
         const response = await fetch(`${DISCORD_GATEWAY.API_BASE_URL}/channels/${channelId}/messages`, {
           method: 'POST',
@@ -77,9 +82,29 @@ export class AutoReplyService {
       } catch (error) {
         logger.error(`Reply failed: ${(error as Error).message}`);
       }
-    }, delayMs);
+    }, preTypingDelayMs);
 
     this.activeTimers.add(timer);
+  }
+
+  private async sendTypingIndicator(channelId: string): Promise<void> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+      await fetch(`${DISCORD_GATEWAY.API_BASE_URL}/channels/${channelId}/typing`, {
+        method: 'POST',
+        headers: {
+          Authorization: this.config.token,
+          'User-Agent': DISCORD_GATEWAY.DEFAULT_USER_AGENT,
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+    } catch {
+      // Typing indicator failure is non-fatal
+    }
   }
 
   public destroy(): void {
