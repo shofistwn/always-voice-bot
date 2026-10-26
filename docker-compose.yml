@@ -28,4 +28,3 @@ services:
 
       # OwO Assistant Settings
       - OWO_ASSISTANT=${OWO_ASSISTANT:-True}
-      - OWO_CHANNEL_ID=${OWO_CHANNEL_ID:-}

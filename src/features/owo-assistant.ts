@@ -70,10 +70,6 @@ export class OwoAssistantService {
       return;
     }
 
-    if (this.config.owoAssistant.channelId && message.channel_id !== this.config.owoAssistant.channelId) {
-      return;
-    }
-
     const isMentioned = message.mentions.some((m) => m.id === botUserId);
     if (!isMentioned) {
       return;

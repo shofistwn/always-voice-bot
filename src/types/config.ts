@@ -19,6 +19,5 @@ export interface BotConfig {
 
   owoAssistant: {
     enabled: boolean;
-    channelId: string;
   };
 }

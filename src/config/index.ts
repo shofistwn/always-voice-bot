@@ -60,7 +60,6 @@ export function loadConfig(): BotConfig {
     },
     owoAssistant: {
       enabled: parseBoolean(process.env.OWO_ASSISTANT, false),
-      channelId: (process.env.OWO_CHANNEL_ID || '').trim(),
     },
   };
 }
