@@ -41,7 +41,12 @@ export class AlwaysVoiceBot {
       this.owoAssistant.start();
       this.voiceManager.setInVoice(false);
       this.voiceManager.resetJoinAttempt();
-      this.voiceManager.joinVoice();
+      this.voiceManager.handleReady(data, this.botUserId);
+
+      // If voice limit is disabled (0), join immediately on startup
+      if (this.config.voiceLimit === 0) {
+        this.voiceManager.joinVoice();
+      }
     });
 
     this.gateway.on('guildCreate', (data) => {

@@ -1,5 +1,5 @@
 import type { BotConfig } from '../types/config.js';
-import type { GuildCreateData, VoiceState } from '../types/discord.js';
+import type { GuildCreateData, ReadyEventData, VoiceState } from '../types/discord.js';
 import type { EntityCache } from '../cache/entity-cache.js';
 import { GATEWAY_OPCODES } from '../constants/discord.js';
 import { createLogger } from '../logger/index.js';
@@ -50,6 +50,14 @@ export class VoiceManager {
     }
     if (!this.sender.isConnected()) {
       logger.warn('Cannot join voice: Gateway is not connected.');
+      return;
+    }
+
+    // Pre-join guard: check room capacity before sending join opcode
+    if (this.config.voiceLimit > 0 && this.voiceUsers.size + 1 > this.config.voiceLimit) {
+      logger.info(
+        `Cannot join voice: room capacity full (${this.voiceUsers.size}/${this.config.voiceLimit} total). Waiting for a slot...`
+      );
       return;
     }
 
@@ -125,6 +133,18 @@ export class VoiceManager {
           `Voice limit safe (${humanCount + 1}/${this.config.voiceLimit} with bot). Rejoining...`
         );
         this.joinVoice();
+      }
+    }
+  }
+
+  public handleReady(data: ReadyEventData, botUserId: string | null): void {
+    if (!Array.isArray(data.guilds)) {
+      return;
+    }
+
+    for (const guild of data.guilds) {
+      if (guild.id === this.config.guildId) {
+        this.handleGuildCreate(guild, botUserId);
       }
     }
   }
