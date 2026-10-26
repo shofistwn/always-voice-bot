@@ -100,7 +100,7 @@ Mention the bot in text chat to trigger quests dynamically targeting yourself:
 - **Cookie**: `@Bot kasih gw cookie`, `@Bot bagi kue dong`, `@Bot cookie 2x`
 - **Pray**: `@Bot bantu pray dong`, `@Bot pray gw 3x`, `@Bot bantu pray 3 kali`
 - **Curse**: `@Bot bantu curse 2x`, `@Bot tolong curse`
-- **Battle Duel Accept**: Saat ada yang mengirim `wb @Bot`, `owob @Bot`, atau `owo b @Bot`, bot memberi jeda 5 detik lalu membalas dengan `owo ab` di channel tersebut.
+- **Battle Duel Accept**: Saat ada yang mengirim `wb @Bot`, `w b @Bot`, `owob @Bot`, atau `owo b @Bot`, bot memberi jeda 5 detik lalu membalas dengan `owo ab` di channel tersebut.
 
 #### Resilience & Cooldown Handling
 - **Restart Resilience**: Queue progress and `nextRun` timestamps are persistently stored in `owo-queue.json`. If the bot restarts or crashes mid-queue, pending tasks resume accurately based on elapsed cooldown time.

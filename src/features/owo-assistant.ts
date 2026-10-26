@@ -80,7 +80,7 @@ export class OwoAssistantService {
     const channelId = message.channel_id;
 
     // Check for battle triggers: wb @mention, owob @mention, owo b @mention, owo battle @mention
-    const isBattleTrigger = /\b(wb|owob|owo\s+b|owo\s+battle|battle)\b/.test(rawContent);
+    const isBattleTrigger = /\b(wb|w\s+b|owob|owo\s+b|w\s+battle|owo\s+battle|battle)\b/.test(rawContent);
 
     if (isBattleTrigger) {
       if (this.isBattlePending) return;
