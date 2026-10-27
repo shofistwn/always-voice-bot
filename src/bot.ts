@@ -1,4 +1,5 @@
 import type { BotConfig } from './types/config.js';
+import type { GuildCreateData } from './types/discord.js';
 import { GatewayClient } from './gateway/gateway-client.js';
 import { VoiceManager } from './voice/voice-manager.js';
 import { EntityCache } from './cache/entity-cache.js';
@@ -49,6 +50,17 @@ export class AlwaysVoiceBot {
       // If voice limit is disabled (0), join immediately on startup
       if (this.config.voiceLimit === 0) {
         this.voiceManager.joinVoice();
+      }
+    });
+
+    this.gateway.on('readySupplemental', (data) => {
+      if (Array.isArray(data.guilds)) {
+        for (const guild of data.guilds) {
+          if (guild.id === this.config.guildId) {
+            this.voiceManager.handleGuildCreate(guild as GuildCreateData, this.botUserId);
+            this.streamWatcher.handleGuildCreate(guild as GuildCreateData, this.botUserId);
+          }
+        }
       }
     });
 

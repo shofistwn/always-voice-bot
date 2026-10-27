@@ -5,6 +5,7 @@ import type {
   GatewayPayload,
   HelloData,
   ReadyEventData,
+  ReadySupplementalData,
   GuildCreateData,
   VoiceState,
   MessageCreateData,
@@ -23,6 +24,7 @@ const logger = createLogger('Gateway');
 
 export interface GatewayClientEvents {
   ready: (data: ReadyEventData) => void;
+  readySupplemental: (data: ReadySupplementalData) => void;
   guildCreate: (data: GuildCreateData) => void;
   voiceStateUpdate: (data: VoiceState) => void;
   messageCreate: (data: MessageCreateData) => void;
@@ -173,7 +175,6 @@ export class GatewayClient extends EventEmitter {
         logger.info('Sending IDENTIFY...');
         this.sendOp(GATEWAY_OPCODES.IDENTIFY, {
           token: this.config.token,
-          capabilities: 16381,
           properties: DISCORD_CLIENT_PROPERTIES,
           presence: {
             status: this.config.status,
@@ -225,6 +226,11 @@ export class GatewayClient extends EventEmitter {
         const readyData = data as ReadyEventData;
         logger.success(`Authenticated as ${readyData.user.username}`);
         this.emit('ready', readyData);
+        break;
+      }
+
+      case 'READY_SUPPLEMENTAL': {
+        this.emit('readySupplemental', data as ReadySupplementalData);
         break;
       }
 
