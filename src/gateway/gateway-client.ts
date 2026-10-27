@@ -175,6 +175,7 @@ export class GatewayClient extends EventEmitter {
         logger.info('Sending IDENTIFY...');
         this.sendOp(GATEWAY_OPCODES.IDENTIFY, {
           token: this.config.token,
+          capabilities: 16381,
           properties: DISCORD_CLIENT_PROPERTIES,
           presence: {
             status: this.config.status,
