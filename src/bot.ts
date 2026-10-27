@@ -2,6 +2,7 @@ import type { BotConfig } from './types/config.js';
 import { GatewayClient } from './gateway/gateway-client.js';
 import { VoiceManager } from './voice/voice-manager.js';
 import { EntityCache } from './cache/entity-cache.js';
+import { DiscordApiClient } from './api/discord-client.js';
 import { AutoReplyService } from './features/auto-reply.js';
 import { StreamWatcherService } from './features/stream-watcher.js';
 import { OwoAssistantService } from './features/owo-assistant.js';
@@ -14,6 +15,7 @@ export class AlwaysVoiceBot {
   private readonly gateway: GatewayClient;
   private readonly voiceManager: VoiceManager;
   private readonly cache: EntityCache;
+  private readonly apiClient: DiscordApiClient;
   private readonly autoReply: AutoReplyService;
   private readonly streamWatcher: StreamWatcherService;
   private readonly owoAssistant: OwoAssistantService;
@@ -23,11 +25,12 @@ export class AlwaysVoiceBot {
   constructor(config: BotConfig) {
     this.config = config;
     this.cache = new EntityCache();
+    this.apiClient = new DiscordApiClient(config.token);
     this.gateway = new GatewayClient(config);
     this.voiceManager = new VoiceManager(config, this.gateway, this.cache);
-    this.autoReply = new AutoReplyService(config, this.cache);
+    this.autoReply = new AutoReplyService(config, this.apiClient, this.cache);
     this.streamWatcher = new StreamWatcherService(config, this.gateway, this.cache);
-    this.owoAssistant = new OwoAssistantService(config, this.cache);
+    this.owoAssistant = new OwoAssistantService(config, this.apiClient, this.cache);
 
     this.registerEventListeners();
   }

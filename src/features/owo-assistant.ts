@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { BotConfig } from '../types/config.js';
 import type { MessageCreateData } from '../types/discord.js';
 import type { EntityCache } from '../cache/entity-cache.js';
-import { DISCORD_GATEWAY } from '../constants/discord.js';
+import type { DiscordApiClient } from '../api/discord-client.js';
 import { createLogger } from '../logger/index.js';
 
 const logger = createLogger('OwOAssist');
@@ -26,8 +26,28 @@ interface OwOPersistedState {
   items: OwOQueueItem[];
 }
 
+/**
+ * Generates human-like delay for pray/curse cooldown using a Gaussian-like distribution.
+ * Simulates a person checking back between ~20s and ~65s after the 5-minute cooldown.
+ */
+function calculateHumanizedPrayCurseInterval(): number {
+  const u1 = Math.random();
+  const u2 = Math.random();
+  const normal = Math.sqrt(-2.0 * Math.log(u1 || 0.0001)) * Math.cos(2.0 * Math.PI * u2);
+  const extraSeconds = Math.max(20, Math.min(75, 40 + normal * 12));
+  return PRAY_CURSE_COOLDOWN_MS + Math.floor(extraSeconds * 1000);
+}
+
+/**
+ * Generates natural delay for cookies (18s - 34s) to avoid robotic burst patterns.
+ */
+function calculateHumanizedCookieInterval(): number {
+  return Math.floor(Math.random() * 16000) + 18000;
+}
+
 export class OwoAssistantService {
   private readonly config: BotConfig;
+  private readonly apiClient: DiscordApiClient;
   private readonly cache?: EntityCache;
   private readonly filePath: string;
 
@@ -41,8 +61,9 @@ export class OwoAssistantService {
   private isSaving: boolean = false;
   private isDestroyed: boolean = false;
 
-  constructor(config: BotConfig, cache?: EntityCache) {
+  constructor(config: BotConfig, apiClient: DiscordApiClient, cache?: EntityCache) {
     this.config = config;
+    this.apiClient = apiClient;
     this.cache = cache;
     this.filePath = path.resolve(process.cwd(), 'owo-queue.json');
 
@@ -87,20 +108,24 @@ export class OwoAssistantService {
       if (this.isBattlePending) return;
       this.isBattlePending = true;
 
+      const battleDelayMs = Math.floor(Math.random() * 3000) + 3500; // 3.5s - 6.5s randomized
       logger.info(
-        `Battle challenge detected from ${message.author.username} ("${message.content}"). Responding with "owo ab" in 5s...`
+        `Battle challenge detected from ${message.author.username} ("${message.content}"). Responding with "owo ab" in ${(battleDelayMs / 1000).toFixed(1)}s...`
       );
 
       setTimeout(async () => {
         try {
           if (this.isDestroyed) return;
-          await this.sendTypingIndicator(channelId);
-          await this.sendMessage(channelId, 'owo ab');
-          logger.success(`Sent "owo ab" in response to battle trigger from ${message.author.username}!`);
+          await this.apiClient.sendTyping(channelId);
+          await new Promise((resolve) => setTimeout(resolve, Math.floor(Math.random() * 800) + 900));
+          const success = await this.apiClient.sendMessage(channelId, 'owo ab');
+          if (success) {
+            logger.success(`Sent "owo ab" in response to battle trigger from ${message.author.username}!`);
+          }
         } finally {
           this.isBattlePending = false;
         }
-      }, 5000);
+      }, battleDelayMs);
       return;
     }
 
@@ -155,7 +180,7 @@ export class OwoAssistantService {
         `Accumulated quest queue for user ${userId}: action=${action}, new total=${existing.remainingCount}`
       );
 
-      // Race condition fix: only schedule if no timer exists AND item is not currently executing
+      // Only schedule if no timer exists AND item is not currently executing
       if (!this.scheduledTimers.has(queueKey) && this.currentlyExecutingId !== queueKey) {
         this.scheduleItem(existing);
       }
@@ -166,7 +191,6 @@ export class OwoAssistantService {
     let initialRun = now;
 
     if (action === 'pray' || action === 'curse') {
-      // Find latest scheduled pray/curse run to queue behind it
       let latestPrayCurseRun = this.globalNextPrayCurseRun;
       for (const item of this.queue.values()) {
         if ((item.action === 'pray' || item.action === 'curse') && item.nextRun > latestPrayCurseRun) {
@@ -269,12 +293,18 @@ export class OwoAssistantService {
         return;
       }
 
-      await this.sendTypingIndicator(item.channelId);
-      const typingWait = Math.floor(Math.random() * 1000) + 1500;
-      await new Promise((resolve) => setTimeout(resolve, typingWait));
-
       const commandText = `owo ${item.action} <@${item.userId}>`;
-      const success = await this.sendMessage(item.channelId, commandText);
+
+      // Natural typing simulation: scale with command length + human reaction time
+      const simulatedTypingMs = Math.min(
+        3200,
+        Math.max(1200, commandText.length * 80 + Math.floor(Math.random() * 600))
+      );
+
+      await this.apiClient.sendTyping(item.channelId);
+      await new Promise((resolve) => setTimeout(resolve, simulatedTypingMs));
+
+      const success = await this.apiClient.sendMessage(item.channelId, commandText);
 
       if (success) {
         item.remainingCount -= 1;
@@ -283,17 +313,18 @@ export class OwoAssistantService {
           `Executed: "${commandText}" in #${channelName} (Remaining: ${item.remainingCount})`
         );
 
-        const jitterMs = Math.floor(Math.random() * 10000) + 5000;
-
         if (item.action === 'pray' || item.action === 'curse') {
-          const cooldownInterval = PRAY_CURSE_COOLDOWN_MS + jitterMs;
+          const cooldownInterval = calculateHumanizedPrayCurseInterval();
           this.globalNextPrayCurseRun = Date.now() + cooldownInterval;
 
           // Round-Robin Fair Scheduling:
-          // Check for other waiting pray/curse items in queue
           const otherPrayCurseItems: OwOQueueItem[] = [];
           for (const [key, queuedItem] of this.queue.entries()) {
-            if (key !== itemId && (queuedItem.action === 'pray' || queuedItem.action === 'curse') && queuedItem.remainingCount > 0) {
+            if (
+              key !== itemId &&
+              (queuedItem.action === 'pray' || queuedItem.action === 'curse') &&
+              queuedItem.remainingCount > 0
+            ) {
               otherPrayCurseItems.push(queuedItem);
             }
           }
@@ -304,21 +335,18 @@ export class OwoAssistantService {
           }
 
           if (otherPrayCurseItems.length > 0) {
-            // Give immediate next slot to the other waiting item
             let nextSlot = this.globalNextPrayCurseRun;
             for (const other of otherPrayCurseItems) {
               other.nextRun = nextSlot;
               this.scheduleItem(other);
-              nextSlot += PRAY_CURSE_COOLDOWN_MS + 5000;
+              nextSlot += calculateHumanizedPrayCurseInterval();
             }
 
-            // If current item still has count left, put it at the back of the line
             if (item.remainingCount > 0) {
               item.nextRun = nextSlot;
               this.scheduleItem(item);
             }
           } else if (item.remainingCount > 0) {
-            // No other users waiting, schedule this item for next cooldown
             item.nextRun = this.globalNextPrayCurseRun;
             this.scheduleItem(item);
           }
@@ -330,15 +358,15 @@ export class OwoAssistantService {
             logger.success(`Completed all ${item.action} requests for user ${item.userId}!`);
             this.queue.delete(itemId);
           } else {
-            const nextCooldown = 10000 + jitterMs;
+            const nextCooldown = calculateHumanizedCookieInterval();
             item.nextRun = Date.now() + nextCooldown;
             this.scheduleItem(item);
           }
           this.saveQueueToFile();
         }
       } else {
-        logger.warn(`Failed to send ${item.action}. Retrying in 15 seconds...`);
-        item.nextRun = Date.now() + 15000;
+        logger.warn(`Failed to send ${item.action}. Backing off for 35 seconds...`);
+        item.nextRun = Date.now() + 35000;
         this.saveQueueToFile();
         this.scheduleItem(item);
       }
@@ -347,50 +375,6 @@ export class OwoAssistantService {
     } finally {
       this.isProcessing = false;
       this.currentlyExecutingId = null;
-    }
-  }
-
-  private async sendTypingIndicator(channelId: string): Promise<void> {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-
-      await fetch(`${DISCORD_GATEWAY.API_BASE_URL}/channels/${channelId}/typing`, {
-        method: 'POST',
-        headers: {
-          Authorization: this.config.token,
-          'User-Agent': DISCORD_GATEWAY.DEFAULT_USER_AGENT,
-        },
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-    } catch {
-      // Typing indicator failure is non-fatal
-    }
-  }
-
-  private async sendMessage(channelId: string, content: string): Promise<boolean> {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-      const response = await fetch(`${DISCORD_GATEWAY.API_BASE_URL}/channels/${channelId}/messages`, {
-        method: 'POST',
-        headers: {
-          Authorization: this.config.token,
-          'Content-Type': 'application/json',
-          'User-Agent': DISCORD_GATEWAY.DEFAULT_USER_AGENT,
-        },
-        body: JSON.stringify({ content }),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-      return response.ok;
-    } catch (error) {
-      logger.error(`Failed to dispatch message to channel ${channelId}: ${(error as Error).message}`);
-      return false;
     }
   }
 
@@ -416,7 +400,8 @@ export class OwoAssistantService {
           }
         }
       } else if (parsed && Array.isArray(parsed.items)) {
-        this.globalNextPrayCurseRun = typeof parsed.globalNextPrayCurseRun === 'number' ? parsed.globalNextPrayCurseRun : 0;
+        this.globalNextPrayCurseRun =
+          typeof parsed.globalNextPrayCurseRun === 'number' ? parsed.globalNextPrayCurseRun : 0;
         for (const item of parsed.items) {
           if (item && item.id && item.remainingCount > 0) {
             if (!item.nextRun || typeof item.nextRun !== 'number') {

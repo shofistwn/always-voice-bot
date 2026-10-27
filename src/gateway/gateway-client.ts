@@ -11,7 +11,11 @@ import type {
   StreamCreateData,
   StreamDeleteData,
 } from '../types/discord.js';
-import { GATEWAY_OPCODES, DISCORD_GATEWAY } from '../constants/discord.js';
+import {
+  GATEWAY_OPCODES,
+  DISCORD_GATEWAY,
+  DISCORD_CLIENT_PROPERTIES,
+} from '../constants/discord.js';
 import { HeartbeatManager, type HeartbeatSender } from './heartbeat.js';
 import { createLogger } from '../logger/index.js';
 
@@ -39,6 +43,11 @@ export class GatewayClient extends EventEmitter {
   private lastSequence: number | null = null;
   private isIntentionalClose: boolean = false;
 
+  // Gateway send rate-limiting: max 120 commands per 60 seconds
+  private readonly sendTimestamps: number[] = [];
+  private readonly GATEWAY_RATE_LIMIT = 120;
+  private readonly GATEWAY_RATE_WINDOW_MS = 60000;
+
   constructor(config: BotConfig) {
     super();
     this.config = config;
@@ -49,7 +58,7 @@ export class GatewayClient extends EventEmitter {
     };
 
     const handleZombieConnection = () => {
-      logger.error('Zombie connection detected. Restarting...');
+      logger.error('Zombie connection detected (missed heartbeat ACK). Exiting for fresh restart...');
       process.exit(1);
     };
 
@@ -66,6 +75,7 @@ export class GatewayClient extends EventEmitter {
       process.exit(1);
     }
 
+    this.isIntentionalClose = false;
     logger.info('Connecting to Discord Gateway...');
 
     try {
@@ -84,31 +94,48 @@ export class GatewayClient extends EventEmitter {
         this.handleMessage(text);
       });
 
-      this.ws.on('close', (code: number) => {
+      this.ws.on('close', (code: number, reason: Buffer) => {
         this.heartbeat.stop();
+        const reasonStr = reason.toString('utf-8');
+
         if (this.isIntentionalClose) {
-          logger.info(`WebSocket closed (code: ${code}).`);
+          logger.info(`WebSocket closed intentionally (code: ${code}).`);
           return;
         }
-        logger.error(`WebSocket closed unexpectedly (code: ${code}).`);
+
+        logger.error(`WebSocket closed unexpectedly (code: ${code}, reason: "${reasonStr || 'none'}"). Exiting for fresh restart...`);
         process.exit(1);
       });
 
       this.ws.on('error', (error: Error) => {
         this.heartbeat.stop();
-        logger.error(`WebSocket error: ${error.message}`);
+        logger.error(`WebSocket transport error: ${error.message}. Exiting for fresh restart...`);
         process.exit(1);
       });
     } catch (error) {
-      logger.error(`Connection failed: ${(error as Error).message}`);
+      logger.error(`Connection failed: ${(error as Error).message}. Exiting...`);
       process.exit(1);
     }
   }
 
   public sendRaw(payload: string): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(payload);
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
     }
+
+    // Enforce gateway rate limiting (120 sends / 60 seconds)
+    const now = Date.now();
+    while (this.sendTimestamps.length > 0 && this.sendTimestamps[0]! < now - this.GATEWAY_RATE_WINDOW_MS) {
+      this.sendTimestamps.shift();
+    }
+
+    if (this.sendTimestamps.length >= this.GATEWAY_RATE_LIMIT) {
+      logger.warn(`Gateway send rate limit hit (${this.sendTimestamps.length}/120 in 60s). Throttling payload.`);
+      return;
+    }
+
+    this.sendTimestamps.push(now);
+    this.ws.send(payload);
   }
 
   public sendOp(op: number, d: unknown): void {
@@ -146,11 +173,8 @@ export class GatewayClient extends EventEmitter {
         logger.info('Sending IDENTIFY...');
         this.sendOp(GATEWAY_OPCODES.IDENTIFY, {
           token: this.config.token,
-          properties: {
-            $os: 'Windows',
-            $browser: 'Chrome',
-            $device: 'PC',
-          },
+          capabilities: 16381,
+          properties: DISCORD_CLIENT_PROPERTIES,
           presence: {
             status: this.config.status,
             afk: false,
@@ -174,13 +198,13 @@ export class GatewayClient extends EventEmitter {
       }
 
       case GATEWAY_OPCODES.RECONNECT: {
-        logger.error('Gateway requested reconnect (OP 7).');
+        logger.error('Gateway requested reconnect (OP 7). Exiting for fresh restart...');
         process.exit(1);
         break;
       }
 
       case GATEWAY_OPCODES.INVALID_SESSION: {
-        logger.error('Invalid session (OP 9).');
+        logger.error('Invalid session (OP 9). Exiting for fresh restart...');
         process.exit(1);
         break;
       }
